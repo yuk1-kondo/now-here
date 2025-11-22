@@ -273,7 +273,11 @@ class Player extends GameObject {
 
         this.lives--;
         this.invulnerable = true;
-        this.invulnerableTimer = CONFIG.INVULNERABILITY_DURATION;
+        // Extended invulnerability combo effect
+        const invulnDuration = this.hasExtendedInvuln
+            ? CONFIG.INVULNERABILITY_DURATION * 1.5
+            : CONFIG.INVULNERABILITY_DURATION;
+        this.invulnerableTimer = invulnDuration;
         this.resetPowerUps();
         return true;
     }
@@ -305,7 +309,7 @@ class Player extends GameObject {
             case 'red':
                 if (!this.hasBarrier) {
                     this.hasBarrier = true;
-                    this.barrierStrength = 10;
+                    this.barrierStrength = CONFIG.BARRIER_INITIAL_STRENGTH;
                 }
                 break;
         }
@@ -315,22 +319,24 @@ class Player extends GameObject {
     }
 
     checkCombos() {
-        // Twin Cannon + Speed = Faster bullets
+        // Power-up combo system: combining different power-ups creates special effects
+
+        // Twin Cannon + Speed = Faster bullets (1.5x bullet speed)
         if (this.hasTwinCannon && this.speedLevel > 0) {
             this.hasFastBullets = true;
         }
 
-        // Twin Cannon + Barrier = Barrier shoots bullets
+        // Twin Cannon + Barrier = Barrier shoots bullets (4-directional auto-fire)
         if (this.hasTwinCannon && this.hasBarrier) {
             this.hasBarrierShots = true;
         }
 
-        // Speed + Barrier = Extended invulnerability
+        // Speed + Barrier = Extended invulnerability (1.5x invuln duration when hit)
         if (this.speedLevel > 0 && this.hasBarrier) {
             this.hasExtendedInvuln = true;
         }
 
-        // All three = Rainbow mode (all effects active)
+        // All three = Rainbow mode (ultimate power - all combo effects active)
         if (this.hasTwinCannon && this.speedLevel > 0 && this.hasBarrier) {
             this.hasRainbowMode = true;
         }
@@ -1126,7 +1132,11 @@ class Game {
     }
 
     resetGame() {
-        this.player = new Player(185, 500, this.selectedShip);
+        // Validate ship type
+        const validShips = ['twinbee', 'winbee', 'gwinbee', 'starbee'];
+        const shipType = validShips.includes(this.selectedShip) ? this.selectedShip : 'twinbee';
+
+        this.player = new Player(185, 500, shipType);
         this.bullets = [];
         this.bombs = [];
         this.enemies = [];
@@ -1140,6 +1150,16 @@ class Game {
         this.stage = 1;
         this.frameCount = 0;
         this.scrollOffset = 0;
+
+        // Reset game stats for new session
+        this.gameStats.enemiesKilled = 0;
+        this.gameStats.bellsCollected = 0;
+        this.gameStats.superAttacksUsed = 0;
+        this.gameStats.dashesUsed = 0;
+        this.gameStats.maxCombo = 0;
+        this.gameStats.currentCombo = 0;
+        this.gameStats.comboTimer = 0;
+
         this.updateUI();
     }
 
@@ -1198,7 +1218,8 @@ class Game {
             return effect.active;
         });
 
-        // Update combo timer
+        // Update combo timer - resets combo if no kills within timeout period
+        // Encourages continuous aggressive play to maintain combo chains
         if (this.gameStats.comboTimer > 0) {
             this.gameStats.comboTimer--;
             if (this.gameStats.comboTimer === 0) {
@@ -1281,13 +1302,15 @@ class Game {
             this.bullets.push(b);
         }
 
-        // Barrier shots - shoot from barrier edges (only when shooting)
+        // Barrier shots - Twin Cannon + Barrier combo effect
+        // Fires 4-directional bullets from barrier edges (only when actively shooting)
+        // Throttled to prevent excessive bullet spam
         if (this.player.hasBarrierShots && this.frameCount % CONFIG.BARRIER_SHOT_INTERVAL === 0) {
             const barrierSize = 15 + this.player.barrierStrength * 2;
             const centerX = this.player.x + this.player.width / 2;
             const centerY = this.player.y + this.player.height / 2;
 
-            // Shoot in 4 directions from barrier
+            // Create bullets at 90-degree intervals (0°, 90°, 180°, 270°)
             for (let i = 0; i < 4; i++) {
                 const angle = (Math.PI / 2) * i;
                 const bx = centerX + Math.cos(angle) * barrierSize - 2;
@@ -1295,7 +1318,7 @@ class Game {
                 const bullet = new Bullet(bx, by, false, damage);
                 bullet.speed = CONFIG.BULLET_SPEED * 0.8;
                 bullet.vx = Math.cos(angle) * 3;
-                bullet.vy = Math.sin(angle) * 3 - 5; // Always go mostly up
+                bullet.vy = Math.sin(angle) * 3 - 5; // Bias toward upward movement
                 this.bullets.push(bullet);
             }
         }
@@ -1475,7 +1498,7 @@ class Game {
     }
 
     createExplosion(x, y, color) {
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
             this.particles.push(new Particle(x, y, color));
         }
     }
