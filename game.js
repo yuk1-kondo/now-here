@@ -22,10 +22,15 @@ const CONFIG = {
     BARRIER_INITIAL_STRENGTH: 10,
     PARTICLE_COUNT: 10,
     PARTICLE_LIFETIME: 30,
+    PARTICLE_MAX_VELOCITY: 4,
     // Bell physics
     BELL_GRAVITY: 0.15,
     BELL_HORIZONTAL_SPEED: 2,
     BELL_VERTICAL_SPEED: -3,
+    // Spawn margins
+    ENEMY_SPAWN_MARGIN_X: 20,
+    CLOUD_SPAWN_MARGIN_X: 20,
+    GROUND_ENEMY_Y_OFFSET: 50,
     // FPS limiting
     TARGET_FPS: 60,
     FRAME_TIME: 1000 / 60  // ~16.67ms per frame
@@ -706,8 +711,8 @@ class Item extends GameObject {
 class Particle extends GameObject {
     constructor(x, y, color) {
         super(x, y, 3, 3);
-        this.vx = (Math.random() - 0.5) * 4;
-        this.vy = (Math.random() - 0.5) * 4;
+        this.vx = (Math.random() - 0.5) * CONFIG.PARTICLE_MAX_VELOCITY;
+        this.vy = (Math.random() - 0.5) * CONFIG.PARTICLE_MAX_VELOCITY;
         this.color = color;
         this.life = CONFIG.PARTICLE_LIFETIME;
     }
@@ -1200,6 +1205,7 @@ class Game {
         this.stage = 1;
         this.frameCount = 0;
         this.scrollOffset = 0;
+        this.isPaused = false;  // Reset pause state
 
         // Reset game stats for new session
         this.gameStats.enemiesKilled = 0;
@@ -1405,22 +1411,45 @@ class Game {
     }
 
     spawnEnemy() {
-        const x = getRandomInt(20, this.canvas.width - 40);
-        const types = ['basic', 'strong', 'fast'];
-        const type = types[getRandomInt(0, types.length - 1)];
+        const x = getRandomInt(
+            CONFIG.ENEMY_SPAWN_MARGIN_X,
+            this.canvas.width - CONFIG.ENEMY_SPAWN_MARGIN_X - 25
+        );
+
+        // Enemy type distribution changes with stage
+        // Higher stages have more strong/fast enemies
+        const rand = Math.random();
+        let type;
+        if (this.stage >= 5) {
+            // Stage 5+: 30% basic, 40% strong, 30% fast
+            type = rand < 0.3 ? 'basic' : rand < 0.7 ? 'strong' : 'fast';
+        } else if (this.stage >= 3) {
+            // Stage 3-4: 40% basic, 30% strong, 30% fast
+            type = rand < 0.4 ? 'basic' : rand < 0.7 ? 'strong' : 'fast';
+        } else {
+            // Stage 1-2: 60% basic, 20% strong, 20% fast
+            type = rand < 0.6 ? 'basic' : rand < 0.8 ? 'strong' : 'fast';
+        }
+
         const enemy = new Enemy(x, -30, type);
         enemy.movePattern = getRandomInt(0, 2);
         this.enemies.push(enemy);
     }
 
     spawnGroundEnemy() {
-        const x = getRandomInt(20, this.canvas.width - 50);
-        const y = this.canvas.height - 50;
+        const x = getRandomInt(
+            CONFIG.ENEMY_SPAWN_MARGIN_X,
+            this.canvas.width - CONFIG.ENEMY_SPAWN_MARGIN_X - 30
+        );
+        const y = this.canvas.height - CONFIG.GROUND_ENEMY_Y_OFFSET;
         this.groundEnemies.push(new GroundEnemy(x, y));
     }
 
     spawnCloud() {
-        const x = getRandomInt(20, this.canvas.width - 60);
+        const x = getRandomInt(
+            CONFIG.CLOUD_SPAWN_MARGIN_X,
+            this.canvas.width - CONFIG.CLOUD_SPAWN_MARGIN_X - 40
+        );
         this.clouds.push(new Cloud(x, -30));
     }
 
@@ -1678,11 +1707,18 @@ class Game {
         this.ctx.textAlign = 'center';
         this.ctx.fillText('SUPER ATTACK', barX + barWidth / 2, barY - 5);
 
-        // Ready indicator
+        // Ready indicator with pulsing effect
         if (this.player.canUseSuperAttack()) {
+            const pulseScale = 1 + Math.sin(Date.now() / 150) * 0.2;
+            this.ctx.save();
+            this.ctx.translate(barX + barWidth / 2, barY + barHeight + 12);
+            this.ctx.scale(pulseScale, pulseScale);
             this.ctx.fillStyle = '#FFD700';
             this.ctx.font = 'bold 12px Arial';
-            this.ctx.fillText('READY!', barX + barWidth / 2, barY + barHeight + 12);
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('READY!', 0, 0);
+            this.ctx.restore();
         }
     }
 
