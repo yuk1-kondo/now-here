@@ -200,6 +200,18 @@ class Player extends GameObject {
             return;
         }
 
+        // Rainbow mode visual effect - colorful aura
+        if (this.hasRainbowMode) {
+            const time = Date.now() / 100;
+            const colors = ['#FF6B6B', '#FFD700', '#4ECDC4', '#9B59B6'];
+            const colorIndex = Math.floor(time) % colors.length;
+            ctx.strokeStyle = colors[colorIndex];
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.6;
+            ctx.strokeRect(this.x - 4, this.y - 4, this.width + 8, this.height + 8);
+            ctx.globalAlpha = 1;
+        }
+
         // Draw barrier
         if (this.hasBarrier) {
             const barrierSize = 15 + this.barrierStrength * 2;
@@ -690,7 +702,7 @@ class Particle extends GameObject {
         this.vx = (Math.random() - 0.5) * 4;
         this.vy = (Math.random() - 0.5) * 4;
         this.color = color;
-        this.life = 30;
+        this.life = CONFIG.PARTICLE_LIFETIME;
     }
 
     update() {
@@ -704,7 +716,7 @@ class Particle extends GameObject {
 
     draw(ctx) {
         ctx.fillStyle = this.color;
-        ctx.globalAlpha = this.life / 30;
+        ctx.globalAlpha = this.life / CONFIG.PARTICLE_LIFETIME;
         ctx.fillRect(this.x, this.y, this.width, this.height);
         ctx.globalAlpha = 1;
     }
@@ -764,6 +776,14 @@ class Game {
     constructor() {
         this.canvas = document.getElementById('game-canvas');
         this.ctx = this.canvas.getContext('2d');
+
+        // Error handling for canvas initialization
+        if (!this.ctx) {
+            console.error('Failed to get 2D context from canvas');
+            alert('このブラウザではゲームを実行できません。Canvas 2Dをサポートするブラウザをご利用ください。');
+            return;
+        }
+
         this.setupCanvas();
 
         this.player = null;
@@ -1201,14 +1221,17 @@ class Game {
             this.useSuperAttack();
         }
 
-        // Handle dash
+        // Handle dash - requires directional input
         if (this.input.dash && !this.input.dashPressed) {
             this.input.dashPressed = true;
             const dirX = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0);
             const dirY = (this.input.down ? 1 : 0) - (this.input.up ? 1 : 0);
-            if (this.player.dash(dirX || 0, dirY || 1)) {
-                this.gameStats.dashesUsed++;
-                this.checkAchievements();
+            // Only dash if a direction is actually pressed
+            if (dirX !== 0 || dirY !== 0) {
+                if (this.player.dash(dirX, dirY)) {
+                    this.gameStats.dashesUsed++;
+                    this.checkAchievements();
+                }
             }
         }
 
@@ -1534,6 +1557,11 @@ class Game {
 
         // Draw combo effects
         this.drawCombos();
+
+        // Draw combo counter
+        if (this.gameStats.currentCombo > 1) {
+            this.drawComboCounter();
+        }
     }
 
     drawCombos() {
@@ -1625,6 +1653,43 @@ class Game {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText('⚡', x, y);
+    }
+
+    drawComboCounter() {
+        const x = this.canvas.width / 2;
+        const y = 50;
+
+        // Background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fillRect(x - 50, y - 20, 100, 30);
+
+        // Combo text with scaling effect
+        const scale = 1 + Math.min(this.gameStats.currentCombo / 50, 0.5);
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        this.ctx.scale(scale, scale);
+
+        // Gradient color based on combo count
+        const gradient = this.ctx.createLinearGradient(-40, 0, 40, 0);
+        if (this.gameStats.currentCombo >= 50) {
+            gradient.addColorStop(0, '#FF6B6B');
+            gradient.addColorStop(0.5, '#FFD700');
+            gradient.addColorStop(1, '#FF6B6B');
+        } else if (this.gameStats.currentCombo >= 10) {
+            gradient.addColorStop(0, '#FFD700');
+            gradient.addColorStop(1, '#FF8C00');
+        } else {
+            gradient.addColorStop(0, '#FFF');
+            gradient.addColorStop(1, '#CCC');
+        }
+
+        this.ctx.fillStyle = gradient;
+        this.ctx.font = 'bold 20px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`${this.gameStats.currentCombo} COMBO!`, 0, 0);
+
+        this.ctx.restore();
     }
 
     drawBackground() {
