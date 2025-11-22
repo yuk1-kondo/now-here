@@ -336,10 +336,6 @@ body {
         font-size: 0.9rem;
         padding: 0.5rem;
     }
-
-    #mobile-controls {
-        display: block;
-    }
 }
 
 @media (max-width: 480px) {

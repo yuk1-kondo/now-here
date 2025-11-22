@@ -33,7 +33,9 @@ const CONFIG = {
     GROUND_ENEMY_Y_OFFSET: 50,
     // FPS limiting
     TARGET_FPS: 60,
-    FRAME_TIME: 1000 / 60  // ~16.67ms per frame
+    FRAME_TIME: 1000 / 60,  // ~16.67ms per frame
+    // 1UP system
+    ONEUP_SCORE_INTERVAL: 20000  // Extra life every 20,000 points
 };
 
 // ===============================
@@ -413,6 +415,38 @@ class Bullet extends GameObject {
 }
 
 // ===============================
+// Enemy Bullet Class
+// ===============================
+class EnemyBullet extends GameObject {
+    constructor(x, y) {
+        super(x, y, 6, 6);
+        this.speed = 3;
+        this.vy = this.speed;
+    }
+
+    update() {
+        this.y += this.vy;
+        if (this.y > 650) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        // Draw enemy bullet (red)
+        ctx.fillStyle = '#FF4444';
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner glow
+        ctx.fillStyle = '#FFAA00';
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ===============================
 // Bomb Class
 // ===============================
 class Bomb extends GameObject {
@@ -456,18 +490,23 @@ class Enemy extends GameObject {
         this.points = 100;
         this.movePattern = 0;
         this.moveTimer = 0;
+        this.shootTimer = Math.random() * 120 + 60;  // Random shoot interval
+        this.shootCooldown = 180;  // 3 seconds between shots
 
         if (type === 'strong') {
             this.health = 2;
             this.points = 200;
+            this.shootCooldown = 120;  // Strong enemies shoot more frequently
         } else if (type === 'fast') {
             this.speed = 3;
             this.points = 150;
+            this.shootCooldown = 150;
         }
     }
 
     update() {
         this.moveTimer++;
+        this.shootTimer--;
 
         switch(this.movePattern) {
             case 0: // Straight down
@@ -486,6 +525,14 @@ class Enemy extends GameObject {
         if (this.y > 650) {
             this.active = false;
         }
+    }
+
+    shouldShoot() {
+        if (this.shootTimer <= 0 && this.y > 50 && this.y < 500) {
+            this.shootTimer = this.shootCooldown;
+            return true;
+        }
+        return false;
     }
 
     draw(ctx) {
@@ -510,6 +557,66 @@ class Enemy extends GameObject {
     takeDamage(damage = 1) {
         this.health -= damage;
         return this.health <= 0;
+    }
+}
+
+// ===============================
+// Boss Class
+// ===============================
+class Boss extends Enemy {
+    constructor(x, y, stage) {
+        super(x, y, 'boss');
+        this.width = 60;
+        this.height = 60;
+        this.health = 20 + stage * 10;  // Increases with stage
+        this.maxHealth = this.health;
+        this.points = 5000;
+        this.speed = 1;
+        this.shootCooldown = 60;  // Shoots every second
+        this.movePattern = 3;  // Boss-specific movement
+        this.moveDirection = 1;
+    }
+
+    update() {
+        this.moveTimer++;
+        this.shootTimer--;
+
+        // Boss movement pattern - horizontal sweep
+        this.x += this.speed * this.moveDirection;
+        if (this.x <= 20 || this.x >= 320) {
+            this.moveDirection *= -1;
+        }
+
+        // Keep boss at top of screen
+        if (this.y < 50) {
+            this.y += 0.5;
+        }
+    }
+
+    draw(ctx) {
+        // Boss body (larger)
+        ctx.fillStyle = '#8B008B';  // Dark magenta
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // Boss details
+        ctx.fillStyle = '#9370DB';  // Medium purple
+        ctx.fillRect(this.x + 10, this.y + 10, this.width - 20, this.height - 20);
+
+        // Boss eyes (menacing)
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(this.x + 15, this.y + 20, 10, 10);
+        ctx.fillRect(this.x + 35, this.y + 20, 10, 10);
+
+        // Health bar
+        const healthBarWidth = this.width;
+        const healthBarHeight = 4;
+        const healthPercentage = this.health / this.maxHealth;
+
+        ctx.fillStyle = '#000';
+        ctx.fillRect(this.x, this.y - 10, healthBarWidth, healthBarHeight);
+
+        ctx.fillStyle = healthPercentage > 0.5 ? '#00FF00' : healthPercentage > 0.25 ? '#FFFF00' : '#FF0000';
+        ctx.fillRect(this.x, this.y - 10, healthBarWidth * healthPercentage, healthBarHeight);
     }
 }
 
@@ -800,6 +907,7 @@ class Game {
 
         this.player = null;
         this.bullets = [];
+        this.enemyBullets = [];
         this.bombs = [];
         this.enemies = [];
         this.groundEnemies = [];
@@ -815,6 +923,9 @@ class Game {
         this.frameCount = 0;
         this.scrollOffset = 0;
         this.lastFrameTime = 0;
+        this.nextOneUpScore = CONFIG.ONEUP_SCORE_INTERVAL;
+        this.bossActive = false;
+        this.bossWarningShown = false;
 
         this.input = {
             left: false,
@@ -847,7 +958,19 @@ class Game {
         };
 
         this.setupEventListeners();
+        this.detectMobileDevice();
         this.showTitleScreen();
+    }
+
+    detectMobileDevice() {
+        // Check if device is mobile/touch-enabled
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                        ('ontouchstart' in window) ||
+                        (navigator.maxTouchPoints > 0);
+
+        if (isMobile) {
+            document.getElementById('mobile-controls').style.display = 'block';
+        }
     }
 
     loadAchievements() {
@@ -926,6 +1049,16 @@ class Game {
 
         if (newAchievement) {
             this.saveAchievements();
+        }
+    }
+
+    check1UP() {
+        // Check if player has reached next 1UP threshold
+        if (this.score >= this.nextOneUpScore) {
+            this.player.lives++;
+            this.nextOneUpScore += CONFIG.ONEUP_SCORE_INTERVAL;
+            this.updateUI();
+            this.showAchievementNotification('1UP!', `残機が増えた！次は${this.nextOneUpScore}点で1UP`);
         }
     }
 
@@ -1193,6 +1326,7 @@ class Game {
         const playerY = CONFIG.CANVAS_HEIGHT - 100;
         this.player = new Player(playerX, playerY, shipType);
         this.bullets = [];
+        this.enemyBullets = [];
         this.bombs = [];
         this.enemies = [];
         this.groundEnemies = [];
@@ -1206,6 +1340,9 @@ class Game {
         this.frameCount = 0;
         this.scrollOffset = 0;
         this.isPaused = false;  // Reset pause state
+        this.nextOneUpScore = CONFIG.ONEUP_SCORE_INTERVAL;  // Reset 1UP threshold
+        this.bossActive = false;  // Reset boss state
+        this.bossWarningShown = false;
 
         // Reset game stats for new session
         this.gameStats.enemiesKilled = 0;
@@ -1304,13 +1441,26 @@ class Game {
         const newStage = Math.floor(this.score / 5000) + 1;
         if (newStage > this.stage) {
             this.stage = newStage;
+            this.bossWarningShown = false;  // Reset for new stage
             this.updateUI();
+
+            // Boss stages (every 5 stages)
+            if (this.stage % 5 === 0 && !this.bossActive) {
+                this.showBossWarning();
+            }
         }
 
-        // Spawn enemies with increasing frequency based on stage
-        const enemySpawnRate = Math.max(30, CONFIG.ENEMY_SPAWN_RATE - (this.stage - 1) * 5);
-        if (this.frameCount % enemySpawnRate === 0) {
-            this.spawnEnemy();
+        // Spawn boss if it's a boss stage and no boss is active
+        if (this.stage % 5 === 0 && !this.bossActive && this.bossWarningShown && this.enemies.length === 0) {
+            this.spawnBoss();
+        }
+
+        // Spawn enemies with increasing frequency based on stage (but not during boss battle)
+        if (!this.bossActive) {
+            const enemySpawnRate = Math.max(30, CONFIG.ENEMY_SPAWN_RATE - (this.stage - 1) * 5);
+            if (this.frameCount % enemySpawnRate === 0) {
+                this.spawnEnemy();
+            }
         }
 
         // Spawn ground enemies
@@ -1326,6 +1476,7 @@ class Game {
 
         // Update all game objects
         this.updateObjects(this.bullets);
+        this.updateObjects(this.enemyBullets);
         this.updateObjects(this.bombs);
         this.updateObjects(this.enemies);
         this.updateObjects(this.groundEnemies);
@@ -1334,8 +1485,21 @@ class Game {
         this.updateObjects(this.items);
         this.updateObjects(this.particles);
 
+        // Check if enemies should shoot
+        this.enemies.forEach(enemy => {
+            if (enemy.active && enemy.shouldShoot()) {
+                this.enemyBullets.push(new EnemyBullet(
+                    enemy.x + enemy.width / 2 - 3,
+                    enemy.y + enemy.height
+                ));
+            }
+        });
+
         // Check collisions
         this.checkCollisions();
+
+        // Check if boss is defeated
+        this.checkBossDefeat();
 
         // Remove inactive objects
         this.cleanupObjects();
@@ -1359,6 +1523,7 @@ class Game {
 
     cleanupObjects() {
         this.bullets = this.bullets.filter(b => b.active);
+        this.enemyBullets = this.enemyBullets.filter(b => b.active);
         this.bombs = this.bombs.filter(b => b.active);
         this.enemies = this.enemies.filter(e => e.active);
         this.groundEnemies = this.groundEnemies.filter(e => e.active);
@@ -1453,6 +1618,32 @@ class Game {
         this.clouds.push(new Cloud(x, -30));
     }
 
+    showBossWarning() {
+        this.bossWarningShown = true;
+        this.showAchievementNotification('⚠️ BOSS WARNING!', `ステージ${this.stage}のボスが出現します！`);
+    }
+
+    spawnBoss() {
+        this.bossActive = true;
+        const boss = new Boss(170, -80, this.stage);
+        this.enemies.push(boss);
+    }
+
+    checkBossDefeat() {
+        // Check if boss is defeated
+        if (this.bossActive) {
+            const bossExists = this.enemies.some(e => e instanceof Boss && e.active);
+            if (!bossExists) {
+                this.bossActive = false;
+                this.showAchievementNotification('🎉 BOSS DEFEATED!', 'ボスを撃破した！ボーナス！');
+                // Bonus points for defeating boss
+                this.score += 10000;
+                this.updateUI();
+                this.check1UP();
+            }
+        }
+    }
+
     useSuperAttack() {
         if (!this.player.useSuperAttack()) return;
 
@@ -1485,6 +1676,7 @@ class Game {
         });
 
         this.updateUI();
+        this.check1UP();
         this.checkAchievements();
     }
 
@@ -1506,6 +1698,7 @@ class Game {
                         }
                         this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#E74C3C');
                         this.updateUI();
+                        this.check1UP();
                         this.checkAchievements();
                     }
                 }
@@ -1549,9 +1742,21 @@ class Game {
 
                         this.createExplosion(groundEnemy.x + groundEnemy.width / 2, groundEnemy.y + groundEnemy.height / 2, '#8B4513');
                         this.updateUI();
+                        this.check1UP();
                     }
                 }
             });
+        });
+
+        // Enemy Bullets vs Player
+        this.enemyBullets.forEach(bullet => {
+            if (bullet.active && checkCollision(this.player, bullet)) {
+                bullet.active = false;
+                if (this.player.takeDamage()) {
+                    this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
+                }
+                this.updateUI();
+            }
         });
 
         // Player vs Enemies
@@ -1579,6 +1784,7 @@ class Game {
                 }
 
                 this.updateUI();
+                this.check1UP();
                 this.checkAchievements();
             }
         });
@@ -1598,6 +1804,7 @@ class Game {
                 }
 
                 this.updateUI();
+                this.check1UP();
             }
         });
     }
@@ -1622,6 +1829,7 @@ class Game {
         this.bells.forEach(b => b.active && b.draw(this.ctx));
         this.enemies.forEach(e => e.active && e.draw(this.ctx));
         this.bullets.forEach(b => b.active && b.draw(this.ctx));
+        this.enemyBullets.forEach(b => b.active && b.draw(this.ctx));
         this.bombs.forEach(b => b.active && b.draw(this.ctx));
         this.particles.forEach(p => p.active && p.draw(this.ctx));
         this.player.draw(this.ctx);
