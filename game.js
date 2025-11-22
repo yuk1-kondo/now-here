@@ -10,7 +10,12 @@ const CONFIG = {
     ENEMY_SPAWN_RATE: 60,
     CLOUD_SPAWN_RATE: 120,
     BELL_COLORS: ['yellow', 'white', 'blue', 'red'],
-    BELL_SHOTS_TO_CHANGE: 5
+    BELL_SHOTS_TO_CHANGE: 5,
+    SUPER_GAUGE_MAX: 100,
+    SUPER_GAUGE_GAIN_PER_KILL: 10,
+    DASH_SPEED: 8,
+    DASH_DURATION: 15,
+    DASH_COOLDOWN: 60
 };
 
 // ===============================
@@ -52,8 +57,9 @@ class GameObject {
 // Player Class (TwinBee)
 // ===============================
 class Player extends GameObject {
-    constructor(x, y) {
+    constructor(x, y, shipType = 'twinbee') {
         super(x, y, 30, 30);
+        this.shipType = shipType;
         this.speed = CONFIG.PLAYER_SPEED;
         this.speedLevel = 0;
         this.lives = 3;
@@ -62,14 +68,73 @@ class Player extends GameObject {
         this.hasTwinCannon = false;
         this.hasBarrier = false;
         this.barrierStrength = 0;
+
+        // Super Attack System
+        this.superGauge = 0;
+
+        // Dash System
+        this.isDashing = false;
+        this.dashTimer = 0;
+        this.dashCooldownTimer = 0;
+        this.dashDirection = { x: 0, y: 0 };
+
+        // Ship-specific stats
+        this.applyShipStats();
+    }
+
+    applyShipStats() {
+        switch(this.shipType) {
+            case 'twinbee':
+                // Balanced
+                this.speed = CONFIG.PLAYER_SPEED;
+                this.damageMultiplier = 1;
+                break;
+            case 'winbee':
+                // Fast, lower damage
+                this.speed = CONFIG.PLAYER_SPEED + 1;
+                this.damageMultiplier = 0.8;
+                break;
+            case 'gwinbee':
+                // Slow, higher damage
+                this.speed = CONFIG.PLAYER_SPEED - 0.5;
+                this.damageMultiplier = 1.5;
+                break;
+            case 'starbee':
+                // Special weapons
+                this.speed = CONFIG.PLAYER_SPEED;
+                this.damageMultiplier = 1.2;
+                this.hasLaser = true;
+                break;
+        }
     }
 
     update(input, canvasWidth, canvasHeight) {
-        // Movement
-        if (input.left && this.x > 0) this.x -= this.speed;
-        if (input.right && this.x < canvasWidth - this.width) this.x += this.speed;
-        if (input.up && this.y > 0) this.y -= this.speed;
-        if (input.down && this.y < canvasHeight - this.height) this.y += this.speed;
+        // Dash cooldown
+        if (this.dashCooldownTimer > 0) {
+            this.dashCooldownTimer--;
+        }
+
+        // Dash movement
+        if (this.isDashing) {
+            this.dashTimer--;
+            this.x += this.dashDirection.x * CONFIG.DASH_SPEED;
+            this.y += this.dashDirection.y * CONFIG.DASH_SPEED;
+
+            // Clamp to canvas
+            this.x = Math.max(0, Math.min(this.x, canvasWidth - this.width));
+            this.y = Math.max(0, Math.min(this.y, canvasHeight - this.height));
+
+            if (this.dashTimer <= 0) {
+                this.isDashing = false;
+            }
+        } else {
+            // Normal movement
+            const currentSpeed = this.speed;
+            if (input.left && this.x > 0) this.x -= currentSpeed;
+            if (input.right && this.x < canvasWidth - this.width) this.x += currentSpeed;
+            if (input.up && this.y > 0) this.y -= currentSpeed;
+            if (input.down && this.y < canvasHeight - this.height) this.y += currentSpeed;
+        }
 
         // Invulnerability timer
         if (this.invulnerable) {
@@ -80,9 +145,52 @@ class Player extends GameObject {
         }
     }
 
+    dash(dirX, dirY) {
+        if (this.dashCooldownTimer > 0 || this.isDashing) return false;
+
+        const length = Math.sqrt(dirX * dirX + dirY * dirY);
+        if (length === 0) return false;
+
+        this.dashDirection.x = dirX / length;
+        this.dashDirection.y = dirY / length;
+        this.isDashing = true;
+        this.dashTimer = CONFIG.DASH_DURATION;
+        this.dashCooldownTimer = CONFIG.DASH_COOLDOWN;
+        this.invulnerable = true;
+        this.invulnerableTimer = CONFIG.DASH_DURATION;
+        return true;
+    }
+
+    addSuperGauge(amount) {
+        this.superGauge = Math.min(this.superGauge + amount, CONFIG.SUPER_GAUGE_MAX);
+    }
+
+    canUseSuperAttack() {
+        return this.superGauge >= CONFIG.SUPER_GAUGE_MAX;
+    }
+
+    useSuperAttack() {
+        if (!this.canUseSuperAttack()) return false;
+        this.superGauge = 0;
+        return true;
+    }
+
     draw(ctx) {
-        // Draw with blinking effect if invulnerable
-        if (this.invulnerable && Math.floor(this.invulnerableTimer / 5) % 2 === 0) {
+        // Draw dash trail
+        if (this.isDashing) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            for (let i = 1; i <= 3; i++) {
+                ctx.fillRect(
+                    this.x - this.dashDirection.x * i * 8,
+                    this.y - this.dashDirection.y * i * 8,
+                    this.width,
+                    this.height
+                );
+            }
+        }
+
+        // Draw with blinking effect if invulnerable (but not dashing)
+        if (this.invulnerable && !this.isDashing && Math.floor(this.invulnerableTimer / 5) % 2 === 0) {
             return;
         }
 
@@ -96,12 +204,34 @@ class Player extends GameObject {
             ctx.stroke();
         }
 
-        // Draw player (simple representation)
-        ctx.fillStyle = '#FF6B6B';
+        // Ship color based on type
+        let bodyColor = '#FF6B6B';
+        let wingColor = '#4ECDC4';
+        switch(this.shipType) {
+            case 'twinbee':
+                bodyColor = '#FF6B6B';
+                wingColor = '#4ECDC4';
+                break;
+            case 'winbee':
+                bodyColor = '#6B9BFF';
+                wingColor = '#4ECDC4';
+                break;
+            case 'gwinbee':
+                bodyColor = '#9B59B6';
+                wingColor = '#E74C3C';
+                break;
+            case 'starbee':
+                bodyColor = '#FFD700';
+                wingColor = '#FF6B6B';
+                break;
+        }
+
+        // Draw player body
+        ctx.fillStyle = bodyColor;
         ctx.fillRect(this.x, this.y, this.width, this.height);
 
         // Wings
-        ctx.fillStyle = '#4ECDC4';
+        ctx.fillStyle = wingColor;
         ctx.fillRect(this.x - 5, this.y + 10, 5, 10);
         ctx.fillRect(this.x + this.width, this.y + 10, 5, 10);
 
@@ -115,6 +245,13 @@ class Player extends GameObject {
         ctx.fillStyle = '#95E1D3';
         ctx.fillRect(this.x - 3, this.y + this.height - 5, 3, 8);
         ctx.fillRect(this.x + this.width, this.y + this.height - 5, 3, 8);
+
+        // Dash glow effect
+        if (this.isDashing) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(this.x - 2, this.y - 2, this.width + 4, this.height + 4);
+        }
     }
 
     takeDamage() {
@@ -504,6 +641,53 @@ class Particle extends GameObject {
 }
 
 // ===============================
+// Super Attack Effect Class
+// ===============================
+class SuperAttackEffect {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 0;
+        this.maxRadius = 500;
+        this.speed = 20;
+        this.active = true;
+        this.alpha = 1;
+    }
+
+    update() {
+        this.radius += this.speed;
+        this.alpha = 1 - (this.radius / this.maxRadius);
+
+        if (this.radius >= this.maxRadius) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+
+        // Outer ring
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner glow
+        const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+        gradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+        gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+// ===============================
 // Game Manager Class
 // ===============================
 class Game {
@@ -536,8 +720,15 @@ class Game {
             shoot: false,
             bomb: false,
             shootPressed: false,
-            bombPressed: false
+            bombPressed: false,
+            super: false,
+            superPressed: false,
+            dash: false,
+            dashPressed: false
         };
+
+        this.selectedShip = 'twinbee';
+        this.superAttackEffects = [];
 
         this.setupEventListeners();
         this.showTitleScreen();
@@ -594,6 +785,26 @@ class Game {
             this.input.bomb = false;
         });
 
+        const dashButton = document.getElementById('dash-button');
+        dashButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.input.dash = true;
+        });
+        dashButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.input.dash = false;
+        });
+
+        const superButton = document.getElementById('super-button');
+        superButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.input.super = true;
+        });
+        superButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.input.super = false;
+        });
+
         // Start button
         document.getElementById('start-button').addEventListener('click', () => {
             this.startGame();
@@ -631,6 +842,14 @@ class Game {
             case 'X':
                 this.input.bomb = true;
                 break;
+            case ' ':
+                this.input.super = true;
+                e.preventDefault();
+                break;
+            case 'Shift':
+                this.input.dash = true;
+                e.preventDefault();
+                break;
         }
     }
 
@@ -657,6 +876,14 @@ class Game {
             case 'X':
                 this.input.bomb = false;
                 this.input.bombPressed = false;
+                break;
+            case ' ':
+                this.input.super = false;
+                this.input.superPressed = false;
+                break;
+            case 'Shift':
+                this.input.dash = false;
+                this.input.dashPressed = false;
                 break;
         }
     }
@@ -688,7 +915,7 @@ class Game {
     }
 
     resetGame() {
-        this.player = new Player(185, 500);
+        this.player = new Player(185, 500, this.selectedShip);
         this.bullets = [];
         this.bombs = [];
         this.enemies = [];
@@ -697,6 +924,7 @@ class Game {
         this.bells = [];
         this.items = [];
         this.particles = [];
+        this.superAttackEffects = [];
         this.score = 0;
         this.stage = 1;
         this.frameCount = 0;
@@ -735,6 +963,26 @@ class Game {
             this.input.bombPressed = true;
             this.dropBomb();
         }
+
+        // Handle super attack
+        if (this.input.super && !this.input.superPressed) {
+            this.input.superPressed = true;
+            this.useSuperAttack();
+        }
+
+        // Handle dash
+        if (this.input.dash && !this.input.dashPressed) {
+            this.input.dashPressed = true;
+            const dirX = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0);
+            const dirY = (this.input.down ? 1 : 0) - (this.input.up ? 1 : 0);
+            this.player.dash(dirX || 0, dirY || 1); // Default to down if no direction
+        }
+
+        // Update super attack effects
+        this.superAttackEffects = this.superAttackEffects.filter(effect => {
+            effect.update();
+            return effect.active;
+        });
 
         // Spawn enemies
         if (this.frameCount % CONFIG.ENEMY_SPAWN_RATE === 0) {
@@ -828,6 +1076,38 @@ class Game {
         this.clouds.push(new Cloud(x, -30));
     }
 
+    useSuperAttack() {
+        if (!this.player.useSuperAttack()) return;
+
+        // Create visual effect
+        this.superAttackEffects.push(new SuperAttackEffect(
+            this.player.x + this.player.width / 2,
+            this.player.y + this.player.height / 2
+        ));
+
+        // Destroy all enemies
+        let enemiesDestroyed = 0;
+        this.enemies.forEach(enemy => {
+            if (enemy.active) {
+                enemy.active = false;
+                this.score += enemy.points * 2; // Double points for super attack
+                this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#FFD700');
+                enemiesDestroyed++;
+            }
+        });
+
+        this.groundEnemies.forEach(enemy => {
+            if (enemy.active) {
+                enemy.active = false;
+                this.score += enemy.points * 2;
+                this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#FFD700');
+                enemiesDestroyed++;
+            }
+        });
+
+        this.updateUI();
+    }
+
     checkCollisions() {
         // Bullets vs Enemies
         this.bullets.forEach(bullet => {
@@ -837,6 +1117,7 @@ class Game {
                     if (enemy.takeDamage()) {
                         enemy.active = false;
                         this.score += enemy.points;
+                        this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
                         this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#E74C3C');
                         this.updateUI();
                     }
@@ -871,6 +1152,7 @@ class Game {
                     if (groundEnemy.takeDamage()) {
                         groundEnemy.active = false;
                         this.score += groundEnemy.points;
+                        this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
 
                         // Drop items
                         if (Math.random() < 0.3) {
@@ -954,6 +1236,81 @@ class Game {
         this.bombs.forEach(b => b.active && b.draw(this.ctx));
         this.particles.forEach(p => p.active && p.draw(this.ctx));
         this.player.draw(this.ctx);
+
+        // Draw super attack effects
+        this.superAttackEffects.forEach(effect => effect.active && effect.draw(this.ctx));
+
+        // Draw super gauge
+        this.drawSuperGauge();
+
+        // Draw dash cooldown indicator
+        if (this.player.dashCooldownTimer > 0) {
+            this.drawDashCooldown();
+        }
+    }
+
+    drawSuperGauge() {
+        const barWidth = 200;
+        const barHeight = 15;
+        const barX = (this.canvas.width - barWidth) / 2;
+        const barY = this.canvas.height - 30;
+
+        // Background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // Gauge fill
+        const fillWidth = (this.player.superGauge / CONFIG.SUPER_GAUGE_MAX) * barWidth;
+        const gradient = this.ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
+        gradient.addColorStop(0, '#FFD700');
+        gradient.addColorStop(1, '#FF6B6B');
+        this.ctx.fillStyle = gradient;
+        this.ctx.fillRect(barX, barY, fillWidth, barHeight);
+
+        // Border
+        this.ctx.strokeStyle = this.player.canUseSuperAttack() ? '#FFD700' : '#FFFFFF';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        // Label
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.font = 'bold 10px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('SUPER ATTACK', barX + barWidth / 2, barY - 5);
+
+        // Ready indicator
+        if (this.player.canUseSuperAttack()) {
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.font = 'bold 12px Arial';
+            this.ctx.fillText('READY!', barX + barWidth / 2, barY + barHeight + 12);
+        }
+    }
+
+    drawDashCooldown() {
+        const radius = 15;
+        const x = this.canvas.width - 30;
+        const y = this.canvas.height - 60;
+
+        // Background circle
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Cooldown arc
+        const progress = 1 - (this.player.dashCooldownTimer / CONFIG.DASH_COOLDOWN);
+        this.ctx.strokeStyle = progress >= 1 ? '#4ECDC4' : '#666';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius - 2, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * progress));
+        this.ctx.stroke();
+
+        // Icon
+        this.ctx.fillStyle = progress >= 1 ? '#4ECDC4' : '#999';
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('⚡', x, y);
     }
 
     drawBackground() {

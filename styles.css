@@ -170,20 +170,22 @@ body {
 .dpad-btn[data-direction="right"] { grid-area: right; }
 
 #action-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 2rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    max-width: 300px;
+    margin: 0 auto;
 }
 
-#shot-button, #bomb-button {
+#shot-button, #bomb-button, #dash-button, #super-button {
     background: linear-gradient(to bottom, #e74c3c, #c0392b);
     border: 3px solid #a93226;
     color: white;
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: bold;
     border-radius: 50%;
-    width: 80px;
-    height: 80px;
+    width: 70px;
+    height: 70px;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
@@ -195,7 +197,17 @@ body {
     border-color: #ba4a00;
 }
 
-#shot-button:active, #bomb-button:active {
+#dash-button {
+    background: linear-gradient(to bottom, #4ECDC4, #3aa8a0);
+    border-color: #2d8580;
+}
+
+#super-button {
+    background: linear-gradient(to bottom, #FFD700, #FFA500);
+    border-color: #FF8C00;
+}
+
+#shot-button:active, #bomb-button:active, #dash-button:active, #super-button:active {
     transform: scale(0.95);
 }
 
