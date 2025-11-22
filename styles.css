@@ -220,7 +220,50 @@ body {
 #ship-select-screen h1 {
     font-size: 2rem;
     color: #f39c12;
+    margin-bottom: 1rem;
+}
+
+#difficulty-selection {
+    margin: 1.5rem auto;
+    text-align: center;
+}
+
+#difficulty-selection h3 {
+    color: #ecf0f1;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+}
+
+.difficulty-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
     margin-bottom: 2rem;
+}
+
+.difficulty-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid #95a5a6;
+    color: #ecf0f1;
+    padding: 0.7rem 2rem;
+    font-size: 1rem;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.difficulty-btn:hover {
+    border-color: #f39c12;
+    background: rgba(243, 156, 18, 0.2);
+    transform: scale(1.05);
+}
+
+.difficulty-btn.selected {
+    border-color: #27ae60;
+    background: rgba(39, 174, 96, 0.3);
+    color: #2ecc71;
+    box-shadow: 0 0 15px rgba(39, 174, 96, 0.5);
 }
 
 #ship-selection {

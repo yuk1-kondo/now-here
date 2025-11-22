@@ -1222,6 +1222,7 @@ class Game {
         };
 
         this.selectedShip = 'twinbee';
+        this.selectedDifficulty = 'normal'; // easy, normal, hard
         this.superAttackEffects = [];
 
         // Achievement system
@@ -1440,6 +1441,18 @@ class Game {
             this.showShipSelectScreen();
         });
 
+        // Difficulty selection
+        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
+        difficultyButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Remove previous selection
+                difficultyButtons.forEach(b => b.classList.remove('selected'));
+                // Select this difficulty
+                btn.classList.add('selected');
+                this.selectedDifficulty = btn.dataset.difficulty;
+            });
+        });
+
         // Ship selection
         const shipCards = document.querySelectorAll('.ship-card');
         shipCards.forEach(card => {
@@ -1608,6 +1621,10 @@ class Game {
         const playerX = (CONFIG.CANVAS_WIDTH - 30) / 2;
         const playerY = CONFIG.CANVAS_HEIGHT - 100;
         this.player = new Player(playerX, playerY, shipType);
+
+        // Apply difficulty settings
+        const difficulty = this.getDifficultyMultipliers();
+        this.player.lives = difficulty.playerLives;
         this.bullets = [];
         this.enemyBullets = [];
         this.bombs = [];
@@ -1740,14 +1757,18 @@ class Game {
 
         // Spawn enemies with increasing frequency based on stage (but not during boss battle)
         if (!this.bossActive) {
-            const enemySpawnRate = Math.max(30, CONFIG.ENEMY_SPAWN_RATE - (this.stage - 1) * 5);
+            const difficulty = this.getDifficultyMultipliers();
+            const baseSpawnRate = Math.max(30, CONFIG.ENEMY_SPAWN_RATE - (this.stage - 1) * 5);
+            const enemySpawnRate = Math.floor(baseSpawnRate * difficulty.enemySpawnRate);
             if (this.frameCount % enemySpawnRate === 0) {
                 this.spawnEnemy();
             }
         }
 
         // Spawn ground enemies
-        const groundSpawnRate = Math.max(90, CONFIG.ENEMY_SPAWN_RATE * 3 - (this.stage - 1) * 15);
+        const difficulty = this.getDifficultyMultipliers();
+        const baseGroundRate = Math.max(90, CONFIG.ENEMY_SPAWN_RATE * 3 - (this.stage - 1) * 15);
+        const groundSpawnRate = Math.floor(baseGroundRate * difficulty.enemySpawnRate);
         if (this.frameCount % groundSpawnRate === 0) {
             this.spawnGroundEnemy();
         }
@@ -1898,6 +1919,12 @@ class Game {
 
         const enemy = new Enemy(x, -30, type);
         enemy.movePattern = getRandomInt(0, 2);
+
+        // Apply difficulty multipliers
+        const difficulty = this.getDifficultyMultipliers();
+        enemy.speed *= difficulty.enemySpeed;
+        enemy.health = Math.ceil(enemy.health * difficulty.enemyHealth);
+
         this.enemies.push(enemy);
     }
 
@@ -2157,6 +2184,34 @@ class Game {
         if ('vibrate' in navigator) {
             navigator.vibrate(pattern);
         }
+    }
+
+    getDifficultyMultipliers() {
+        // Returns multipliers based on selected difficulty
+        const multipliers = {
+            easy: {
+                enemySpeed: 0.7,
+                enemyHealth: 0.7,
+                enemySpawnRate: 1.5,  // Higher = slower spawn
+                bulletSpeed: 0.8,
+                playerLives: 5
+            },
+            normal: {
+                enemySpeed: 1.0,
+                enemyHealth: 1.0,
+                enemySpawnRate: 1.0,
+                bulletSpeed: 1.0,
+                playerLives: 3
+            },
+            hard: {
+                enemySpeed: 1.3,
+                enemyHealth: 1.5,
+                enemySpawnRate: 0.7,  // Lower = faster spawn
+                bulletSpeed: 1.2,
+                playerLives: 2
+            }
+        };
+        return multipliers[this.selectedDifficulty] || multipliers.normal;
     }
 
     draw() {
