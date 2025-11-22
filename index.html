@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>TwinBee Clone - ツインビー クローン</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="title-screen">
+            <h1>TwinBee Clone</h1>
+            <p>ツインビー クローンゲーム</p>
+            <button id="start-button">START GAME</button>
+            <div id="instructions">
+                <h3>操作方法</h3>
+                <p><strong>PC:</strong> 矢印キー: 移動 | Z: ショット | X: 爆弾</p>
+                <p><strong>スマホ:</strong> 画面タッチで移動 | ボタンで攻撃</p>
+                <h3>ゲームの目標</h3>
+                <p>空中の敵をショットで撃ち、地上の敵を爆弾で破壊しよう！</p>
+                <p>雲を撃つとベルが出現。さらに撃つと色が変わってパワーアップ！</p>
+            </div>
+        </div>
+
+        <div id="game-screen" style="display: none;">
+            <div id="hud">
+                <div id="score">SCORE: <span>0</span></div>
+                <div id="lives">LIVES: <span>3</span></div>
+                <div id="stage">STAGE: <span>1</span></div>
+            </div>
+            <canvas id="game-canvas"></canvas>
+
+            <!-- Mobile Controls -->
+            <div id="mobile-controls">
+                <div id="dpad">
+                    <button class="dpad-btn" data-direction="up">↑</button>
+                    <button class="dpad-btn" data-direction="left">←</button>
+                    <button class="dpad-btn" data-direction="down">↓</button>
+                    <button class="dpad-btn" data-direction="right">→</button>
+                </div>
+                <div id="action-buttons">
+                    <button id="shot-button">SHOT</button>
+                    <button id="bomb-button">BOMB</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-over-screen" style="display: none;">
+            <h1>GAME OVER</h1>
+            <p>FINAL SCORE: <span id="final-score">0</span></p>
+            <button id="restart-button">RESTART</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
