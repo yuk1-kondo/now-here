@@ -110,7 +110,56 @@
             <h1>GAME OVER</h1>
             <p>FINAL SCORE: <span id="final-score">0</span></p>
             <p>HIGH SCORE: <span id="high-score">0</span></p>
-            <button id="restart-button">RESTART</button>
+            <div class="button-group">
+                <button id="shop-button">🛒 SHOP</button>
+                <button id="restart-button">RESTART</button>
+            </div>
+        </div>
+
+        <div id="shop-screen" style="display: none;">
+            <h1>🛒 ITEM SHOP</h1>
+            <p class="shop-currency">保有スコア: <span id="shop-score">0</span></p>
+
+            <div id="shop-items">
+                <div class="shop-item" data-item="maxLives">
+                    <h3>💚 最大ライフ+1</h3>
+                    <p>初期ライフが1増える</p>
+                    <p class="price">コスト: 50,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+                <div class="shop-item" data-item="startSpeed">
+                    <h3>⚡ 初期スピード</h3>
+                    <p>最初から速度アップ</p>
+                    <p class="price">コスト: 30,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+                <div class="shop-item" data-item="startTwin">
+                    <h3>🔫 初期ツイン砲</h3>
+                    <p>最初からツイン砲装備</p>
+                    <p class="price">コスト: 40,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+                <div class="shop-item" data-item="superGaugeBoost">
+                    <h3>💥 必殺ゲージ+</h3>
+                    <p>必殺技ゲージの溜まりが1.5倍</p>
+                    <p class="price">コスト: 35,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+                <div class="shop-item" data-item="dashCooldown">
+                    <h3>💨 ダッシュ強化</h3>
+                    <p>ダッシュのクールダウン半減</p>
+                    <p class="price">コスト: 25,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+                <div class="shop-item" data-item="scoreMultiplier">
+                    <h3>🌟 スコア倍率</h3>
+                    <p>獲得スコア1.2倍</p>
+                    <p class="price">コスト: 60,000</p>
+                    <button class="buy-btn">購入</button>
+                </div>
+            </div>
+
+            <button id="shop-back-button">戻る</button>
         </div>
     </div>
 

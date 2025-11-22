@@ -1227,6 +1227,19 @@ class Game {
 
         // Achievement system
         this.achievements = this.loadAchievements();
+
+        // Shop system
+        this.shopItems = {
+            maxLives: { name: '最大ライフ+1', cost: 50000, purchased: false },
+            startSpeed: { name: '初期スピード', cost: 30000, purchased: false },
+            startTwin: { name: '初期ツイン砲', cost: 40000, purchased: false },
+            superGaugeBoost: { name: '必殺ゲージ+', cost: 35000, purchased: false },
+            dashCooldown: { name: 'ダッシュ強化', cost: 25000, purchased: false },
+            scoreMultiplier: { name: 'スコア倍率', cost: 60000, purchased: false }
+        };
+        this.loadShopItems();
+        this.totalScore = this.loadTotalScore();
+
         this.gameStats = {
             enemiesKilled: 0,
             bellsCollected: 0,
@@ -1279,6 +1292,48 @@ class Game {
             localStorage.setItem('twinbee_achievements', JSON.stringify(this.achievements));
         } catch (error) {
             console.warn('Failed to save achievements to LocalStorage:', error);
+        }
+    }
+
+    loadShopItems() {
+        try {
+            const saved = localStorage.getItem('twinbee_shop');
+            if (saved) {
+                const savedItems = JSON.parse(saved);
+                Object.keys(savedItems).forEach(key => {
+                    if (this.shopItems[key]) {
+                        this.shopItems[key].purchased = savedItems[key].purchased;
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to load shop items from LocalStorage:', error);
+        }
+    }
+
+    saveShopItems() {
+        try {
+            localStorage.setItem('twinbee_shop', JSON.stringify(this.shopItems));
+        } catch (error) {
+            console.warn('Failed to save shop items to LocalStorage:', error);
+        }
+    }
+
+    loadTotalScore() {
+        try {
+            const saved = localStorage.getItem('twinbee_totalScore');
+            return saved ? parseInt(saved, 10) : 0;
+        } catch (error) {
+            console.warn('Failed to load total score from LocalStorage:', error);
+            return 0;
+        }
+    }
+
+    saveTotalScore() {
+        try {
+            localStorage.setItem('twinbee_totalScore', this.totalScore.toString());
+        } catch (error) {
+            console.warn('Failed to save total score to LocalStorage:', error);
         }
     }
 
@@ -1479,6 +1534,25 @@ class Game {
         document.getElementById('restart-button').addEventListener('click', () => {
             this.showShipSelectScreen();
         });
+
+        // Shop button
+        document.getElementById('shop-button').addEventListener('click', () => {
+            this.showShopScreen();
+        });
+
+        // Shop back button
+        document.getElementById('shop-back-button').addEventListener('click', () => {
+            this.showGameOverScreen();
+        });
+
+        // Shop purchase buttons
+        document.querySelectorAll('.buy-btn').forEach((btn, index) => {
+            btn.addEventListener('click', () => {
+                const shopItem = btn.closest('.shop-item');
+                const itemKey = shopItem.dataset.item;
+                this.purchaseItem(itemKey);
+            });
+        });
     }
 
     handleKeyDown(e) {
@@ -1587,8 +1661,64 @@ class Game {
         document.getElementById('ship-select-screen').style.display = 'none';
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('game-over-screen').style.display = 'block';
+        document.getElementById('shop-screen').style.display = 'none';
         document.getElementById('final-score').textContent = this.score;
         document.getElementById('high-score').textContent = this.achievements.highScore;
+    }
+
+    showShopScreen() {
+        document.getElementById('title-screen').style.display = 'none';
+        document.getElementById('ship-select-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('game-over-screen').style.display = 'none';
+        document.getElementById('shop-screen').style.display = 'block';
+
+        // Update shop display
+        document.getElementById('shop-score').textContent = this.totalScore.toLocaleString();
+        this.updateShopUI();
+    }
+
+    updateShopUI() {
+        document.querySelectorAll('.shop-item').forEach(item => {
+            const itemKey = item.dataset.item;
+            const shopItem = this.shopItems[itemKey];
+            const buyBtn = item.querySelector('.buy-btn');
+
+            if (shopItem.purchased) {
+                item.classList.add('purchased');
+                buyBtn.disabled = true;
+                buyBtn.textContent = '購入済み';
+            } else if (this.totalScore < shopItem.cost) {
+                buyBtn.disabled = true;
+            } else {
+                buyBtn.disabled = false;
+                item.classList.remove('purchased');
+                buyBtn.textContent = '購入';
+            }
+        });
+    }
+
+    purchaseItem(itemKey) {
+        const item = this.shopItems[itemKey];
+        if (!item || item.purchased || this.totalScore < item.cost) {
+            return;
+        }
+
+        // Deduct cost
+        this.totalScore -= item.cost;
+        item.purchased = true;
+
+        // Save changes
+        this.saveShopItems();
+        this.saveTotalScore();
+
+        // Update UI
+        document.getElementById('shop-score').textContent = this.totalScore.toLocaleString();
+        this.updateShopUI();
+
+        // Show notification
+        this.showAchievementNotification('🛒 購入完了!', `${item.name} を購入しました！`);
+        this.vibrate(50);
     }
 
     startGame() {
@@ -1625,6 +1755,19 @@ class Game {
         // Apply difficulty settings
         const difficulty = this.getDifficultyMultipliers();
         this.player.lives = difficulty.playerLives;
+
+        // Apply shop upgrades
+        if (this.shopItems.maxLives.purchased) {
+            this.player.lives += 1;
+        }
+        if (this.shopItems.startSpeed.purchased) {
+            this.player.speedLevel = 1;
+            this.player.speed = CONFIG.PLAYER_SPEED + 1;
+        }
+        if (this.shopItems.startTwin.purchased) {
+            this.player.hasTwinCannon = true;
+        }
+
         this.bullets = [];
         this.enemyBullets = [];
         this.bombs = [];
@@ -1976,7 +2119,7 @@ class Game {
                 this.showAchievementNotification('🎉 BOSS DEFEATED!', 'ボスを撃破した！ボーナス！');
 
                 // Bonus points for defeating boss
-                this.score += 10000;
+                this.addScore(10000);
                 this.updateUI();
                 this.check1UP();
             }
@@ -1999,7 +2142,7 @@ class Game {
         this.enemies.forEach(enemy => {
             if (enemy.active) {
                 enemy.active = false;
-                this.score += enemy.points * 2; // Double points for super attack
+                this.addScore(enemy.points * 2); // Double points for super attack
                 this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#FFD700');
                 enemiesDestroyed++;
             }
@@ -2008,7 +2151,7 @@ class Game {
         this.groundEnemies.forEach(enemy => {
             if (enemy.active) {
                 enemy.active = false;
-                this.score += enemy.points * 2;
+                this.addScore(enemy.points * 2);
                 this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#FFD700');
                 enemiesDestroyed++;
             }
@@ -2027,8 +2170,11 @@ class Game {
                     bullet.active = false;
                     if (enemy.takeDamage(bullet.damage)) {
                         enemy.active = false;
-                        this.score += enemy.points;
-                        this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
+                        this.addScore(enemy.points);
+                        const gaugeGain = this.shopItems.superGaugeBoost.purchased
+                            ? CONFIG.SUPER_GAUGE_GAIN_PER_KILL * 1.5
+                            : CONFIG.SUPER_GAUGE_GAIN_PER_KILL;
+                        this.player.addSuperGauge(gaugeGain);
                         this.gameStats.enemiesKilled++;
                         this.gameStats.currentCombo++;
                         this.gameStats.comboTimer = CONFIG.COMBO_TIMEOUT;
@@ -2070,8 +2216,11 @@ class Game {
                     bomb.active = false;
                     if (groundEnemy.takeDamage()) {
                         groundEnemy.active = false;
-                        this.score += groundEnemy.points;
-                        this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
+                        this.addScore(groundEnemy.points);
+                        const gaugeGain = this.shopItems.superGaugeBoost.purchased
+                            ? CONFIG.SUPER_GAUGE_GAIN_PER_KILL * 1.5
+                            : CONFIG.SUPER_GAUGE_GAIN_PER_KILL;
+                        this.player.addSuperGauge(gaugeGain);
 
                         // Drop items
                         if (Math.random() < 0.3) {
@@ -2124,7 +2273,7 @@ class Game {
                 this.soundManager.playBell(bell.colorIndex);
 
                 if (colorName === 'yellow') {
-                    this.score += 500;
+                    this.addScore(500);
                 } else {
                     this.player.powerUp(colorName);
                     // Play power-up sound for non-yellow bells
@@ -2141,13 +2290,13 @@ class Game {
         this.items.forEach(item => {
             if (item.active && checkCollision(this.player, item)) {
                 item.active = false;
-                this.score += item.points;
+                this.addScore(item.points);
 
                 if (item.type === 'star') {
                     // Clear all enemies on screen
                     this.enemies.forEach(e => {
                         e.active = false;
-                        this.score += e.points;
+                        this.addScore(e.points);
                     });
                 }
 
@@ -2184,6 +2333,12 @@ class Game {
         if ('vibrate' in navigator) {
             navigator.vibrate(pattern);
         }
+    }
+
+    addScore(points) {
+        // Apply score multiplier if purchased
+        const multiplier = this.shopItems.scoreMultiplier.purchased ? 1.2 : 1.0;
+        this.score += Math.floor(points * multiplier);
     }
 
     getDifficultyMultipliers() {
@@ -2466,6 +2621,10 @@ class Game {
             this.achievements.highScore = this.score;
             this.saveAchievements();
         }
+
+        // Add score to total (for shop purchases)
+        this.totalScore += this.score;
+        this.saveTotalScore();
 
         // Reset combo
         this.gameStats.currentCombo = 0;
