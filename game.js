@@ -15,7 +15,13 @@ const CONFIG = {
     SUPER_GAUGE_GAIN_PER_KILL: 10,
     DASH_SPEED: 8,
     DASH_DURATION: 15,
-    DASH_COOLDOWN: 60
+    DASH_COOLDOWN: 60,
+    COMBO_TIMEOUT: 120, // Frames before combo resets (2 seconds at 60fps)
+    BARRIER_SHOT_INTERVAL: 10,
+    INVULNERABILITY_DURATION: 120,
+    BARRIER_INITIAL_STRENGTH: 10,
+    PARTICLE_COUNT: 10,
+    PARTICLE_LIFETIME: 30
 };
 
 // ===============================
@@ -267,11 +273,24 @@ class Player extends GameObject {
 
         this.lives--;
         this.invulnerable = true;
-        this.invulnerableTimer = 120;
+        this.invulnerableTimer = CONFIG.INVULNERABILITY_DURATION;
+        this.resetPowerUps();
+        return true;
+    }
+
+    resetPowerUps() {
         this.speedLevel = 0;
         this.speed = CONFIG.PLAYER_SPEED;
+        this.applyShipStats(); // Reapply ship-specific speed
         this.hasTwinCannon = false;
-        return true;
+        this.hasBarrier = false;
+        this.barrierStrength = 0;
+
+        // Reset combo flags
+        this.hasFastBullets = false;
+        this.hasBarrierShots = false;
+        this.hasExtendedInvuln = false;
+        this.hasRainbowMode = false;
     }
 
     powerUp(color) {
@@ -331,10 +350,11 @@ class Player extends GameObject {
 // Bullet Class
 // ===============================
 class Bullet extends GameObject {
-    constructor(x, y, isTwin = false) {
+    constructor(x, y, isTwin = false, damage = 1) {
         super(x, y, 4, 12);
         this.speed = CONFIG.BULLET_SPEED;
         this.isTwin = isTwin;
+        this.damage = damage;
         this.vx = 0;
         this.vy = -this.speed;
     }
@@ -457,8 +477,8 @@ class Enemy extends GameObject {
         ctx.fillRect(this.x + 14, this.y + 8, 5, 5);
     }
 
-    takeDamage() {
-        this.health--;
+    takeDamage(damage = 1) {
+        this.health -= damage;
         return this.health <= 0;
     }
 }
@@ -490,8 +510,8 @@ class GroundEnemy extends GameObject {
         ctx.fillRect(this.x + 12, this.y - 5, 6, 10);
     }
 
-    takeDamage() {
-        this.health--;
+    takeDamage(damage = 1) {
+        this.health -= damage;
         return this.health <= 0;
     }
 }
@@ -782,7 +802,8 @@ class Game {
             superAttacksUsed: 0,
             dashesUsed: 0,
             maxCombo: 0,
-            currentCombo: 0
+            currentCombo: 0,
+            comboTimer: 0
         };
 
         this.setupEventListeners();
@@ -790,9 +811,13 @@ class Game {
     }
 
     loadAchievements() {
-        const saved = localStorage.getItem('twinbee_achievements');
-        if (saved) {
-            return JSON.parse(saved);
+        try {
+            const saved = localStorage.getItem('twinbee_achievements');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (error) {
+            console.warn('Failed to load achievements from LocalStorage:', error);
         }
         return {
             highScore: 0,
@@ -807,7 +832,11 @@ class Game {
     }
 
     saveAchievements() {
-        localStorage.setItem('twinbee_achievements', JSON.stringify(this.achievements));
+        try {
+            localStorage.setItem('twinbee_achievements', JSON.stringify(this.achievements));
+        } catch (error) {
+            console.warn('Failed to save achievements to LocalStorage:', error);
+        }
     }
 
     checkAchievements() {
@@ -1169,6 +1198,14 @@ class Game {
             return effect.active;
         });
 
+        // Update combo timer
+        if (this.gameStats.comboTimer > 0) {
+            this.gameStats.comboTimer--;
+            if (this.gameStats.comboTimer === 0) {
+                this.gameStats.currentCombo = 0;
+            }
+        }
+
         // Spawn enemies
         if (this.frameCount % CONFIG.ENEMY_SPAWN_RATE === 0) {
             this.spawnEnemy();
@@ -1230,21 +1267,22 @@ class Game {
 
     shoot() {
         const bulletSpeed = this.player.hasFastBullets ? CONFIG.BULLET_SPEED * 1.5 : CONFIG.BULLET_SPEED;
+        const damage = this.player.damageMultiplier;
 
         if (this.player.hasTwinCannon) {
-            const b1 = new Bullet(this.player.x + 5, this.player.y);
-            const b2 = new Bullet(this.player.x + this.player.width - 9, this.player.y);
+            const b1 = new Bullet(this.player.x + 5, this.player.y, true, damage);
+            const b2 = new Bullet(this.player.x + this.player.width - 9, this.player.y, true, damage);
             b1.speed = bulletSpeed;
             b2.speed = bulletSpeed;
             this.bullets.push(b1, b2);
         } else {
-            const b = new Bullet(this.player.x + this.player.width / 2 - 2, this.player.y);
+            const b = new Bullet(this.player.x + this.player.width / 2 - 2, this.player.y, false, damage);
             b.speed = bulletSpeed;
             this.bullets.push(b);
         }
 
-        // Barrier shots - shoot from barrier edges
-        if (this.player.hasBarrierShots && this.frameCount % 10 === 0) {
+        // Barrier shots - shoot from barrier edges (only when shooting)
+        if (this.player.hasBarrierShots && this.frameCount % CONFIG.BARRIER_SHOT_INTERVAL === 0) {
             const barrierSize = 15 + this.player.barrierStrength * 2;
             const centerX = this.player.x + this.player.width / 2;
             const centerY = this.player.y + this.player.height / 2;
@@ -1254,7 +1292,7 @@ class Game {
                 const angle = (Math.PI / 2) * i;
                 const bx = centerX + Math.cos(angle) * barrierSize - 2;
                 const by = centerY + Math.sin(angle) * barrierSize - 6;
-                const bullet = new Bullet(bx, by);
+                const bullet = new Bullet(bx, by, false, damage);
                 bullet.speed = CONFIG.BULLET_SPEED * 0.8;
                 bullet.vx = Math.cos(angle) * 3;
                 bullet.vy = Math.sin(angle) * 3 - 5; // Always go mostly up
@@ -1328,12 +1366,13 @@ class Game {
             this.enemies.forEach(enemy => {
                 if (bullet.active && enemy.active && checkCollision(bullet, enemy)) {
                     bullet.active = false;
-                    if (enemy.takeDamage()) {
+                    if (enemy.takeDamage(bullet.damage)) {
                         enemy.active = false;
                         this.score += enemy.points;
                         this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
                         this.gameStats.enemiesKilled++;
                         this.gameStats.currentCombo++;
+                        this.gameStats.comboTimer = CONFIG.COMBO_TIMEOUT;
                         if (this.gameStats.currentCombo > this.gameStats.maxCombo) {
                             this.gameStats.maxCombo = this.gameStats.currentCombo;
                         }
