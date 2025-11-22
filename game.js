@@ -39,6 +39,246 @@ const CONFIG = {
 };
 
 // ===============================
+// Sound Manager (Web Audio API)
+// ===============================
+class SoundManager {
+    constructor() {
+        this.audioContext = null;
+        this.enabled = true;
+        this.sfxVolume = 0.3;
+        this.bgmVolume = 0.2;
+        this.currentBGM = null;
+        this.initAudioContext();
+    }
+
+    initAudioContext() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.warn('Web Audio API not supported:', e);
+            this.enabled = false;
+        }
+    }
+
+    // Resume audio context (required for mobile browsers)
+    resume() {
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+    }
+
+    // Play shooting sound
+    playShoot() {
+        if (!this.enabled) return;
+        this.resume();
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(800, this.audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, this.audioContext.currentTime + 0.05);
+
+        gain.gain.setValueAtTime(this.sfxVolume, this.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.05);
+
+        osc.connect(gain);
+        gain.connect(this.audioContext.destination);
+
+        osc.start();
+        osc.stop(this.audioContext.currentTime + 0.05);
+    }
+
+    // Play explosion sound
+    playExplosion() {
+        if (!this.enabled) return;
+        this.resume();
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, this.audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(this.sfxVolume * 0.8, this.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+
+        osc.connect(gain);
+        gain.connect(this.audioContext.destination);
+
+        osc.start();
+        osc.stop(this.audioContext.currentTime + 0.2);
+    }
+
+    // Play bell sound
+    playBell(colorIndex) {
+        if (!this.enabled) return;
+        this.resume();
+
+        const frequencies = [523, 659, 784, 1047]; // C5, E5, G5, C6
+        const freq = frequencies[colorIndex % 4];
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+
+        gain.gain.setValueAtTime(this.sfxVolume * 0.5, this.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.audioContext.destination);
+
+        osc.start();
+        osc.stop(this.audioContext.currentTime + 0.3);
+    }
+
+    // Play power-up sound
+    playPowerUp() {
+        if (!this.enabled) return;
+        this.resume();
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(400, this.audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, this.audioContext.currentTime + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(1200, this.audioContext.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(this.sfxVolume * 0.6, this.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+
+        osc.connect(gain);
+        gain.connect(this.audioContext.destination);
+
+        osc.start();
+        osc.stop(this.audioContext.currentTime + 0.2);
+    }
+
+    // Play damage sound
+    playDamage() {
+        if (!this.enabled) return;
+        this.resume();
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, this.audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.3);
+
+        gain.gain.setValueAtTime(this.sfxVolume, this.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.audioContext.destination);
+
+        osc.start();
+        osc.stop(this.audioContext.currentTime + 0.3);
+    }
+
+    // Play boss warning sound
+    playBossWarning() {
+        if (!this.enabled) return;
+        this.resume();
+
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(440, this.audioContext.currentTime);
+
+                gain.gain.setValueAtTime(this.sfxVolume * 0.7, this.audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.audioContext.destination);
+
+                osc.start();
+                osc.stop(this.audioContext.currentTime + 0.15);
+            }, i * 200);
+        }
+    }
+
+    // Start normal BGM
+    startNormalBGM() {
+        if (!this.enabled || this.currentBGM === 'normal') return;
+        this.stopBGM();
+        this.currentBGM = 'normal';
+        this.resume();
+        this.playBGMLoop([523, 587, 659, 523], 0.4); // C-D-E-C pattern
+    }
+
+    // Start boss BGM
+    startBossBGM() {
+        if (!this.enabled || this.currentBGM === 'boss') return;
+        this.stopBGM();
+        this.currentBGM = 'boss';
+        this.resume();
+        this.playBGMLoop([392, 440, 494, 440], 0.3); // G-A-B-A pattern (faster)
+    }
+
+    // Helper to create simple BGM loop
+    playBGMLoop(notes, duration) {
+        if (!this.enabled) return;
+
+        let noteIndex = 0;
+        const playNote = () => {
+            if (!this.enabled || !this.currentBGM) return;
+
+            const osc = this.audioContext.createOscillator();
+            const gain = this.audioContext.createGain();
+
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(notes[noteIndex], this.audioContext.currentTime);
+
+            gain.gain.setValueAtTime(this.bgmVolume, this.audioContext.currentTime);
+            gain.gain.setValueAtTime(this.bgmVolume * 0.8, this.audioContext.currentTime + duration * 0.9);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+
+            osc.connect(gain);
+            gain.connect(this.audioContext.destination);
+
+            osc.start();
+            osc.stop(this.audioContext.currentTime + duration);
+
+            noteIndex = (noteIndex + 1) % notes.length;
+
+            setTimeout(playNote, duration * 1000);
+        };
+
+        playNote();
+    }
+
+    // Stop BGM
+    stopBGM() {
+        this.currentBGM = null;
+    }
+
+    // Set volumes
+    setSFXVolume(volume) {
+        this.sfxVolume = Math.max(0, Math.min(1, volume));
+    }
+
+    setBGMVolume(volume) {
+        this.bgmVolume = Math.max(0, Math.min(1, volume));
+    }
+
+    // Toggle sound on/off
+    toggle() {
+        this.enabled = !this.enabled;
+        if (!this.enabled) {
+            this.stopBGM();
+        }
+    }
+}
+
+// ===============================
 // Utility Functions
 // ===============================
 function checkCollision(obj1, obj2) {
@@ -822,11 +1062,21 @@ class Particle extends GameObject {
         this.vy = (Math.random() - 0.5) * CONFIG.PARTICLE_MAX_VELOCITY;
         this.color = color;
         this.life = CONFIG.PARTICLE_LIFETIME;
+        this.maxLife = CONFIG.PARTICLE_LIFETIME;
+
+        // Enhanced particle properties
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotationSpeed = (Math.random() - 0.5) * 0.3;
+        this.size = Math.random() * 4 + 2; // Random size 2-6
+        this.shape = Math.random() < 0.5 ? 'circle' : 'square'; // Random shape
+        this.gravity = 0.1;
     }
 
     update() {
         this.x += this.vx;
         this.y += this.vy;
+        this.vy += this.gravity; // Add gravity effect
+        this.rotation += this.rotationSpeed;
         this.life--;
         if (this.life <= 0) {
             this.active = false;
@@ -834,9 +1084,29 @@ class Particle extends GameObject {
     }
 
     draw(ctx) {
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = this.life / CONFIG.PARTICLE_LIFETIME;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        const alpha = this.life / this.maxLife;
+        ctx.globalAlpha = alpha;
+
+        ctx.save();
+        ctx.translate(this.x + this.size / 2, this.y + this.size / 2);
+        ctx.rotate(this.rotation);
+
+        if (this.shape === 'circle') {
+            // Draw glowing circle
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
+            gradient.addColorStop(0, this.color);
+            gradient.addColorStop(1, this.color.replace(')', ', 0)').replace('rgb', 'rgba'));
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Draw rotating square
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+        }
+
+        ctx.restore();
         ctx.globalAlpha = 1;
     }
 }
@@ -905,6 +1175,9 @@ class Game {
 
         this.setupCanvas();
 
+        // Initialize Sound Manager
+        this.soundManager = new SoundManager();
+
         this.player = null;
         this.bullets = [];
         this.enemyBullets = [];
@@ -926,6 +1199,12 @@ class Game {
         this.nextOneUpScore = CONFIG.ONEUP_SCORE_INTERVAL;
         this.bossActive = false;
         this.bossWarningShown = false;
+
+        // Screen effects
+        this.screenShake = 0;
+        this.screenShakeIntensity = 0;
+        this.slowMotion = false;
+        this.slowMotionTimer = 0;
 
         this.input = {
             left: false,
@@ -1305,6 +1584,10 @@ class Game {
         this.gameRunning = true;
         this.isPaused = false;
         this.lastFrameTime = performance.now();
+
+        // Start normal BGM
+        this.soundManager.startNormalBGM();
+
         this.gameLoop();
     }
 
@@ -1509,6 +1792,17 @@ class Game {
             this.gameOver();
         }
 
+        // Update screen effects
+        if (this.screenShake > 0) {
+            this.screenShake--;
+        }
+        if (this.slowMotionTimer > 0) {
+            this.slowMotionTimer--;
+            if (this.slowMotionTimer === 0) {
+                this.slowMotion = false;
+            }
+        }
+
         // Update scroll offset
         this.scrollOffset += 1;
     }
@@ -1534,6 +1828,12 @@ class Game {
     }
 
     shoot() {
+        // Play shooting sound
+        this.soundManager.playShoot();
+
+        // Vibrate on shoot (very short)
+        this.vibrate(10);
+
         const bulletSpeed = this.player.hasFastBullets ? CONFIG.BULLET_SPEED * 1.5 : CONFIG.BULLET_SPEED;
         const damage = this.player.damageMultiplier;
 
@@ -1620,11 +1920,14 @@ class Game {
 
     showBossWarning() {
         this.bossWarningShown = true;
+        this.soundManager.playBossWarning();
         this.showAchievementNotification('⚠️ BOSS WARNING!', `ステージ${this.stage}のボスが出現します！`);
     }
 
     spawnBoss() {
         this.bossActive = true;
+        // Switch to boss BGM
+        this.soundManager.startBossBGM();
         const boss = new Boss(170, -80, this.stage);
         this.enemies.push(boss);
     }
@@ -1635,7 +1938,16 @@ class Game {
             const bossExists = this.enemies.some(e => e instanceof Boss && e.active);
             if (!bossExists) {
                 this.bossActive = false;
+
+                // Epic defeat effects: screen shake + slow motion + vibration
+                this.triggerScreenShake(10);
+                this.triggerSlowMotion(60); // 1 second of slow motion
+                this.vibrate([100, 50, 100, 50, 200]); // Victory vibration pattern
+
+                // Return to normal BGM
+                this.soundManager.startNormalBGM();
                 this.showAchievementNotification('🎉 BOSS DEFEATED!', 'ボスを撃破した！ボーナス！');
+
                 // Bonus points for defeating boss
                 this.score += 10000;
                 this.updateUI();
@@ -1753,6 +2065,8 @@ class Game {
             if (bullet.active && checkCollision(this.player, bullet)) {
                 bullet.active = false;
                 if (this.player.takeDamage()) {
+                    this.soundManager.playDamage();
+                    this.vibrate(100); // Medium vibration for damage
                     this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
                 }
                 this.updateUI();
@@ -1764,6 +2078,8 @@ class Game {
             if (enemy.active && checkCollision(this.player, enemy)) {
                 enemy.active = false;
                 if (this.player.takeDamage()) {
+                    this.soundManager.playDamage();
+                    this.vibrate(100); // Medium vibration for damage
                     this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
                 }
                 this.updateUI();
@@ -1777,10 +2093,15 @@ class Game {
                 const colorName = bell.getColorName();
                 this.gameStats.bellsCollected++;
 
+                // Play bell sound based on color
+                this.soundManager.playBell(bell.colorIndex);
+
                 if (colorName === 'yellow') {
                     this.score += 500;
                 } else {
                     this.player.powerUp(colorName);
+                    // Play power-up sound for non-yellow bells
+                    this.soundManager.playPowerUp();
                 }
 
                 this.updateUI();
@@ -1810,14 +2131,45 @@ class Game {
     }
 
     createExplosion(x, y, color) {
+        // Play explosion sound
+        this.soundManager.playExplosion();
+
+        // Trigger screen shake for explosions
+        this.triggerScreenShake(3);
+
         for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
             this.particles.push(new Particle(x, y, color));
+        }
+    }
+
+    triggerScreenShake(intensity) {
+        this.screenShake = 10; // Duration in frames
+        this.screenShakeIntensity = intensity;
+    }
+
+    triggerSlowMotion(duration) {
+        this.slowMotion = true;
+        this.slowMotionTimer = duration;
+    }
+
+    vibrate(pattern) {
+        // Vibration API for mobile devices
+        if ('vibrate' in navigator) {
+            navigator.vibrate(pattern);
         }
     }
 
     draw() {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Apply screen shake effect
+        this.ctx.save();
+        if (this.screenShake > 0) {
+            const shakeX = (Math.random() - 0.5) * this.screenShakeIntensity;
+            const shakeY = (Math.random() - 0.5) * this.screenShakeIntensity;
+            this.ctx.translate(shakeX, shakeY);
+        }
 
         // Draw background
         this.drawBackground();
@@ -1833,6 +2185,8 @@ class Game {
         this.bombs.forEach(b => b.active && b.draw(this.ctx));
         this.particles.forEach(p => p.active && p.draw(this.ctx));
         this.player.draw(this.ctx);
+
+        this.ctx.restore();
 
         // Draw super attack effects
         this.superAttackEffects.forEach(effect => effect.active && effect.draw(this.ctx));
@@ -2012,15 +2366,29 @@ class Game {
     }
 
     drawBackground() {
-        // Scrolling background effect
+        // Stage-based background variations
+        const backgrounds = [
+            { top: '#87CEEB', bottom: '#98D8E8', cloudColor: 'rgba(255, 255, 255, 0.3)' }, // Sky blue (stages 1-2)
+            { top: '#FFB6C1', bottom: '#FFC0CB', cloudColor: 'rgba(255, 200, 200, 0.3)' }, // Pink sunset (stages 3-4)
+            { top: '#4B0082', bottom: '#8B008B', cloudColor: 'rgba(150, 100, 200, 0.3)' }, // Purple twilight (stages 5-6)
+            { top: '#FF4500', bottom: '#FF6347', cloudColor: 'rgba(255, 150, 100, 0.3)' }, // Orange dusk (stages 7-8)
+            { top: '#191970', bottom: '#000080', cloudColor: 'rgba(100, 100, 200, 0.3)' }, // Night sky (stages 9-10)
+            { top: '#006400', bottom: '#228B22', cloudColor: 'rgba(150, 255, 150, 0.3)' }  // Green forest (stages 11+)
+        ];
+
+        // Select background based on stage (cycle every 2 stages)
+        const bgIndex = Math.min(Math.floor((this.stage - 1) / 2), backgrounds.length - 1);
+        const bg = backgrounds[bgIndex];
+
+        // Draw gradient background
         const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-        gradient.addColorStop(0, '#87CEEB');
-        gradient.addColorStop(1, '#98D8E8');
+        gradient.addColorStop(0, bg.top);
+        gradient.addColorStop(1, bg.bottom);
         this.ctx.fillStyle = gradient;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Simple clouds in background
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        // Draw scrolling clouds with stage-based color
+        this.ctx.fillStyle = bg.cloudColor;
         const cloudY = (this.scrollOffset % 200) - 100;
         for (let i = 0; i < 5; i++) {
             const y = cloudY + i * 150;
@@ -2034,6 +2402,9 @@ class Game {
 
     gameOver() {
         this.gameRunning = false;
+
+        // Stop BGM
+        this.soundManager.stopBGM();
 
         // Update high score
         if (this.score > this.achievements.highScore) {
