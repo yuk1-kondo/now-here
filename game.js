@@ -21,7 +21,14 @@ const CONFIG = {
     INVULNERABILITY_DURATION: 120,
     BARRIER_INITIAL_STRENGTH: 10,
     PARTICLE_COUNT: 10,
-    PARTICLE_LIFETIME: 30
+    PARTICLE_LIFETIME: 30,
+    // Bell physics
+    BELL_GRAVITY: 0.15,
+    BELL_HORIZONTAL_SPEED: 2,
+    BELL_VERTICAL_SPEED: -3,
+    // FPS limiting
+    TARGET_FPS: 60,
+    FRAME_TIME: 1000 / 60  // ~16.67ms per frame
 };
 
 // ===============================
@@ -571,9 +578,9 @@ class Bell extends GameObject {
         super(x, y, 20, 20);
         this.colorIndex = 0;
         this.shotsReceived = 0;
-        this.vx = 2;
-        this.vy = -3;
-        this.gravity = 0.15;
+        this.vx = CONFIG.BELL_HORIZONTAL_SPEED;
+        this.vy = CONFIG.BELL_VERTICAL_SPEED;
+        this.gravity = CONFIG.BELL_GRAVITY;
     }
 
     update() {
@@ -799,8 +806,10 @@ class Game {
         this.score = 0;
         this.stage = 1;
         this.gameRunning = false;
+        this.isPaused = false;
         this.frameCount = 0;
         this.scrollOffset = 0;
+        this.lastFrameTime = 0;
 
         this.input = {
             left: false,
@@ -1076,6 +1085,14 @@ class Game {
                 this.input.dash = true;
                 e.preventDefault();
                 break;
+            case 'Escape':
+            case 'p':
+            case 'P':
+                if (this.gameRunning) {
+                    this.togglePause();
+                }
+                e.preventDefault();
+                break;
         }
     }
 
@@ -1148,7 +1165,17 @@ class Game {
         this.showGameScreen();
         this.resetGame();
         this.gameRunning = true;
+        this.isPaused = false;
+        this.lastFrameTime = performance.now();
         this.gameLoop();
+    }
+
+    togglePause() {
+        this.isPaused = !this.isPaused;
+        if (!this.isPaused) {
+            // Reset frame time when unpausing to prevent frame skip
+            this.lastFrameTime = performance.now();
+        }
     }
 
     resetGame() {
@@ -1156,7 +1183,10 @@ class Game {
         const validShips = ['twinbee', 'winbee', 'gwinbee', 'starbee'];
         const shipType = validShips.includes(this.selectedShip) ? this.selectedShip : 'twinbee';
 
-        this.player = new Player(185, 500, shipType);
+        // Center player horizontally, near bottom
+        const playerX = (CONFIG.CANVAS_WIDTH - 30) / 2;
+        const playerY = CONFIG.CANVAS_HEIGHT - 100;
+        this.player = new Player(playerX, playerY, shipType);
         this.bullets = [];
         this.bombs = [];
         this.enemies = [];
@@ -1189,14 +1219,28 @@ class Game {
         document.querySelector('#stage span').textContent = this.stage;
     }
 
-    gameLoop() {
+    gameLoop(currentTime = performance.now()) {
         if (!this.gameRunning) return;
 
-        this.update();
-        this.draw();
-        this.frameCount++;
+        // FPS limiting - only update if enough time has passed
+        const deltaTime = currentTime - this.lastFrameTime;
+        if (deltaTime < CONFIG.FRAME_TIME) {
+            requestAnimationFrame((time) => this.gameLoop(time));
+            return;
+        }
 
-        requestAnimationFrame(() => this.gameLoop());
+        this.lastFrameTime = currentTime - (deltaTime % CONFIG.FRAME_TIME);
+
+        // Handle pause
+        if (!this.isPaused) {
+            this.update();
+            this.frameCount++;
+        }
+
+        // Always draw (to show pause screen)
+        this.draw();
+
+        requestAnimationFrame((time) => this.gameLoop(time));
     }
 
     update() {
@@ -1250,13 +1294,22 @@ class Game {
             }
         }
 
-        // Spawn enemies
-        if (this.frameCount % CONFIG.ENEMY_SPAWN_RATE === 0) {
+        // Stage progression based on score
+        const newStage = Math.floor(this.score / 5000) + 1;
+        if (newStage > this.stage) {
+            this.stage = newStage;
+            this.updateUI();
+        }
+
+        // Spawn enemies with increasing frequency based on stage
+        const enemySpawnRate = Math.max(30, CONFIG.ENEMY_SPAWN_RATE - (this.stage - 1) * 5);
+        if (this.frameCount % enemySpawnRate === 0) {
             this.spawnEnemy();
         }
 
         // Spawn ground enemies
-        if (this.frameCount % (CONFIG.ENEMY_SPAWN_RATE * 3) === 0) {
+        const groundSpawnRate = Math.max(90, CONFIG.ENEMY_SPAWN_RATE * 3 - (this.stage - 1) * 15);
+        if (this.frameCount % groundSpawnRate === 0) {
             this.spawnGroundEnemy();
         }
 
@@ -1562,6 +1615,11 @@ class Game {
         if (this.gameStats.currentCombo > 1) {
             this.drawComboCounter();
         }
+
+        // Draw pause screen
+        if (this.isPaused) {
+            this.drawPauseScreen();
+        }
     }
 
     drawCombos() {
@@ -1690,6 +1748,23 @@ class Game {
         this.ctx.fillText(`${this.gameStats.currentCombo} COMBO!`, 0, 0);
 
         this.ctx.restore();
+    }
+
+    drawPauseScreen() {
+        // Semi-transparent overlay
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Pause text
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.font = 'bold 40px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('PAUSE', this.canvas.width / 2, this.canvas.height / 2 - 30);
+
+        // Instructions
+        this.ctx.font = '16px Arial';
+        this.ctx.fillText('Press P or ESC to resume', this.canvas.width / 2, this.canvas.height / 2 + 20);
     }
 
     drawBackground() {
