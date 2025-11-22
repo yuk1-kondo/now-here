@@ -36,6 +36,15 @@
                 </div>
             </div>
 
+            <div id="stage-select-section">
+                <h3>スタート:</h3>
+                <div class="start-buttons">
+                    <button id="normal-start-btn" class="start-option-btn selected">ステージ1から</button>
+                    <button id="stage-select-btn" class="start-option-btn">ステージ選択</button>
+                    <button id="daily-challenge-btn" class="start-option-btn">🌟 デイリー</button>
+                </div>
+            </div>
+
             <div id="ship-selection">
                 <div class="ship-card" data-ship="twinbee">
                     <div class="ship-preview" style="background: #FF6B6B;"></div>
@@ -160,6 +169,15 @@
             </div>
 
             <button id="shop-back-button">戻る</button>
+        </div>
+
+        <div id="stage-select-modal" style="display: none;">
+            <div class="modal-content">
+                <h2>ステージセレクト</h2>
+                <p class="modal-desc">クリア済みのステージから開始できます</p>
+                <div id="stage-grid"></div>
+                <button id="stage-modal-close">戻る</button>
+            </div>
         </div>
     </div>
 

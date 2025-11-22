@@ -1240,6 +1240,12 @@ class Game {
         this.loadShopItems();
         this.totalScore = this.loadTotalScore();
 
+        // Stage select system
+        this.clearedStages = this.loadClearedStages();
+        this.startStage = 1;
+        this.gameMode = 'normal'; // 'normal', 'stage-select', 'daily-challenge'
+        this.dailyRandomSeed = 0; // Seeded random for daily challenge
+
         this.gameStats = {
             enemiesKilled: 0,
             bellsCollected: 0,
@@ -1334,6 +1340,24 @@ class Game {
             localStorage.setItem('twinbee_totalScore', this.totalScore.toString());
         } catch (error) {
             console.warn('Failed to save total score to LocalStorage:', error);
+        }
+    }
+
+    loadClearedStages() {
+        try {
+            const saved = localStorage.getItem('twinbee_clearedStages');
+            return saved ? JSON.parse(saved) : [1]; // Stage 1 always available
+        } catch (error) {
+            console.warn('Failed to load cleared stages from LocalStorage:', error);
+            return [1];
+        }
+    }
+
+    saveClearedStages() {
+        try {
+            localStorage.setItem('twinbee_clearedStages', JSON.stringify(this.clearedStages));
+        } catch (error) {
+            console.warn('Failed to save cleared stages to LocalStorage:', error);
         }
     }
 
@@ -1553,6 +1577,38 @@ class Game {
                 this.purchaseItem(itemKey);
             });
         });
+
+        // Start mode buttons
+        const startModeButtons = document.querySelectorAll('.start-option-btn');
+        startModeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                startModeButtons.forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+            });
+        });
+
+        // Normal start
+        document.getElementById('normal-start-btn').addEventListener('click', () => {
+            this.gameMode = 'normal';
+            this.startStage = 1;
+        });
+
+        // Stage select button
+        document.getElementById('stage-select-btn').addEventListener('click', () => {
+            this.showStageSelectModal();
+        });
+
+        // Daily challenge button
+        document.getElementById('daily-challenge-btn').addEventListener('click', () => {
+            this.gameMode = 'daily-challenge';
+            this.startStage = 1;
+            this.showAchievementNotification('🌟 デイリーチャレンジ!', '今日の特別ステージに挑戦！');
+        });
+
+        // Stage modal close
+        document.getElementById('stage-modal-close').addEventListener('click', () => {
+            this.hideStageSelectModal();
+        });
     }
 
     handleKeyDown(e) {
@@ -1721,6 +1777,47 @@ class Game {
         this.vibrate(50);
     }
 
+    showStageSelectModal() {
+        const modal = document.getElementById('stage-select-modal');
+        const stageGrid = document.getElementById('stage-grid');
+
+        // Clear previous grid
+        stageGrid.innerHTML = '';
+
+        // Create stage buttons (up to 20 stages)
+        for (let i = 1; i <= 20; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'stage-btn';
+            btn.textContent = `Stage ${i}`;
+
+            const isCleared = this.clearedStages.includes(i);
+            const isAvailable = i === 1 || this.clearedStages.includes(i - 1);
+
+            if (isCleared) {
+                btn.classList.add('cleared');
+            }
+
+            if (!isAvailable) {
+                btn.disabled = true;
+            } else {
+                btn.addEventListener('click', () => {
+                    this.gameMode = 'stage-select';
+                    this.startStage = i;
+                    this.hideStageSelectModal();
+                    this.showAchievementNotification(`ステージ${i}選択`, 'がんばって！');
+                });
+            }
+
+            stageGrid.appendChild(btn);
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    hideStageSelectModal() {
+        document.getElementById('stage-select-modal').style.display = 'none';
+    }
+
     startGame() {
         this.showGameScreen();
         this.resetGame();
@@ -1779,8 +1876,17 @@ class Game {
         this.particles = [];
         this.superAttackEffects = [];
         this.score = 0;
-        this.stage = 1;
+        this.stage = this.startStage; // Use selected start stage
         this.frameCount = 0;
+
+        // Apply daily challenge modifiers
+        if (this.gameMode === 'daily-challenge') {
+            const dailySeed = this.getDailySeed();
+            this.dailyRandomSeed = dailySeed; // Initialize seeded random for consistent daily challenge
+            // Daily challenge: harder difficulty, but 2x score
+            this.player.lives = Math.max(1, this.player.lives - 1);
+            this.showAchievementNotification('🌟 デイリーモード', 'スコア2倍！難易度UP！');
+        }
         this.scrollOffset = 0;
         this.isPaused = false;  // Reset pause state
         this.nextOneUpScore = CONFIG.ONEUP_SCORE_INTERVAL;  // Reset 1UP threshold
@@ -1883,6 +1989,13 @@ class Game {
         // Stage progression based on score
         const newStage = Math.floor(this.score / 5000) + 1;
         if (newStage > this.stage) {
+            // Save the previous stage as cleared
+            const previousStage = this.stage;
+            if (!this.clearedStages.includes(previousStage)) {
+                this.clearedStages.push(previousStage);
+                this.saveClearedStages();
+            }
+
             this.stage = newStage;
             this.bossWarningShown = false;  // Reset for new stage
             this.updateUI();
@@ -2047,7 +2160,8 @@ class Game {
 
         // Enemy type distribution changes with stage
         // Higher stages have more strong/fast enemies
-        const rand = Math.random();
+        // Use seeded random for daily challenge to ensure consistent patterns
+        const rand = this.gameMode === 'daily-challenge' ? this.seededRandom() : Math.random();
         let type;
         if (this.stage >= 5) {
             // Stage 5+: 30% basic, 40% strong, 30% fast
@@ -2061,7 +2175,10 @@ class Game {
         }
 
         const enemy = new Enemy(x, -30, type);
-        enemy.movePattern = getRandomInt(0, 2);
+
+        // Also use seeded random for move pattern in daily challenge
+        const patternRand = this.gameMode === 'daily-challenge' ? this.seededRandom() : Math.random();
+        enemy.movePattern = Math.floor(patternRand * 3);
 
         // Apply difficulty multipliers
         const difficulty = this.getDifficultyMultipliers();
@@ -2337,8 +2454,30 @@ class Game {
 
     addScore(points) {
         // Apply score multiplier if purchased
-        const multiplier = this.shopItems.scoreMultiplier.purchased ? 1.2 : 1.0;
+        let multiplier = this.shopItems.scoreMultiplier.purchased ? 1.2 : 1.0;
+
+        // Daily challenge gives 2x score
+        if (this.gameMode === 'daily-challenge') {
+            multiplier *= 2;
+        }
+
         this.score += Math.floor(points * multiplier);
+    }
+
+    getDailySeed() {
+        // Generate a seed based on current date
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth() + 1;
+        const day = today.getDate();
+        return year * 10000 + month * 100 + day; // e.g., 20250322
+    }
+
+    seededRandom() {
+        // Linear Congruential Generator for seeded random
+        // Only used for daily challenge to ensure consistent randomness for each day
+        this.dailyRandomSeed = (this.dailyRandomSeed * 1664525 + 1013904223) % 4294967296;
+        return this.dailyRandomSeed / 4294967296;
     }
 
     getDifficultyMultipliers() {
