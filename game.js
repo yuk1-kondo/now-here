@@ -774,8 +774,113 @@ class Game {
         this.selectedShip = 'twinbee';
         this.superAttackEffects = [];
 
+        // Achievement system
+        this.achievements = this.loadAchievements();
+        this.gameStats = {
+            enemiesKilled: 0,
+            bellsCollected: 0,
+            superAttacksUsed: 0,
+            dashesUsed: 0,
+            maxCombo: 0,
+            currentCombo: 0
+        };
+
         this.setupEventListeners();
         this.showTitleScreen();
+    }
+
+    loadAchievements() {
+        const saved = localStorage.getItem('twinbee_achievements');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+        return {
+            highScore: 0,
+            firstKill: false,
+            combo10: false,
+            combo50: false,
+            bellMaster: false,
+            superUser: false,
+            dashMaster: false,
+            rainbowWarrior: false
+        };
+    }
+
+    saveAchievements() {
+        localStorage.setItem('twinbee_achievements', JSON.stringify(this.achievements));
+    }
+
+    checkAchievements() {
+        let newAchievement = false;
+
+        if (this.gameStats.enemiesKilled >= 1 && !this.achievements.firstKill) {
+            this.achievements.firstKill = true;
+            this.showAchievementNotification('初撃破！', '初めて敵を倒した！');
+            newAchievement = true;
+        }
+
+        if (this.gameStats.maxCombo >= 10 && !this.achievements.combo10) {
+            this.achievements.combo10 = true;
+            this.showAchievementNotification('コンボマスター', '10コンボ達成！');
+            newAchievement = true;
+        }
+
+        if (this.gameStats.maxCombo >= 50 && !this.achievements.combo50) {
+            this.achievements.combo50 = true;
+            this.showAchievementNotification('コンボキング！', '50コンボ達成！');
+            newAchievement = true;
+        }
+
+        if (this.gameStats.bellsCollected >= 20 && !this.achievements.bellMaster) {
+            this.achievements.bellMaster = true;
+            this.showAchievementNotification('ベルマスター', 'ベルを20個集めた！');
+            newAchievement = true;
+        }
+
+        if (this.gameStats.superAttacksUsed >= 5 && !this.achievements.superUser) {
+            this.achievements.superUser = true;
+            this.showAchievementNotification('必殺技使い', '必殺技を5回使用！');
+            newAchievement = true;
+        }
+
+        if (this.gameStats.dashesUsed >= 10 && !this.achievements.dashMaster) {
+            this.achievements.dashMaster = true;
+            this.showAchievementNotification('ダッシュマスター', 'ダッシュを10回使用！');
+            newAchievement = true;
+        }
+
+        if (this.player && this.player.hasRainbowMode && !this.achievements.rainbowWarrior) {
+            this.achievements.rainbowWarrior = true;
+            this.showAchievementNotification('🌈 Rainbow Warrior', 'レインボーモード達成！');
+            newAchievement = true;
+        }
+
+        if (newAchievement) {
+            this.saveAchievements();
+        }
+    }
+
+    showAchievementNotification(title, description) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'achievement-notification';
+        notification.innerHTML = `
+            <div class="achievement-icon">🏆</div>
+            <div class="achievement-text">
+                <div class="achievement-title">${title}</div>
+                <div class="achievement-desc">${description}</div>
+            </div>
+        `;
+        document.body.appendChild(notification);
+
+        // Animate in
+        setTimeout(() => notification.classList.add('show'), 100);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
     }
 
     setupCanvas() {
@@ -981,6 +1086,7 @@ class Game {
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('game-over-screen').style.display = 'block';
         document.getElementById('final-score').textContent = this.score;
+        document.getElementById('high-score').textContent = this.achievements.highScore;
     }
 
     startGame() {
@@ -1051,7 +1157,10 @@ class Game {
             this.input.dashPressed = true;
             const dirX = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0);
             const dirY = (this.input.down ? 1 : 0) - (this.input.up ? 1 : 0);
-            this.player.dash(dirX || 0, dirY || 1); // Default to down if no direction
+            if (this.player.dash(dirX || 0, dirY || 1)) {
+                this.gameStats.dashesUsed++;
+                this.checkAchievements();
+            }
         }
 
         // Update super attack effects
@@ -1181,6 +1290,8 @@ class Game {
     useSuperAttack() {
         if (!this.player.useSuperAttack()) return;
 
+        this.gameStats.superAttacksUsed++;
+
         // Create visual effect
         this.superAttackEffects.push(new SuperAttackEffect(
             this.player.x + this.player.width / 2,
@@ -1208,6 +1319,7 @@ class Game {
         });
 
         this.updateUI();
+        this.checkAchievements();
     }
 
     checkCollisions() {
@@ -1220,8 +1332,14 @@ class Game {
                         enemy.active = false;
                         this.score += enemy.points;
                         this.player.addSuperGauge(CONFIG.SUPER_GAUGE_GAIN_PER_KILL);
+                        this.gameStats.enemiesKilled++;
+                        this.gameStats.currentCombo++;
+                        if (this.gameStats.currentCombo > this.gameStats.maxCombo) {
+                            this.gameStats.maxCombo = this.gameStats.currentCombo;
+                        }
                         this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#E74C3C');
                         this.updateUI();
+                        this.checkAchievements();
                     }
                 }
             });
@@ -1285,6 +1403,7 @@ class Game {
             if (bell.active && checkCollision(this.player, bell)) {
                 bell.active = false;
                 const colorName = bell.getColorName();
+                this.gameStats.bellsCollected++;
 
                 if (colorName === 'yellow') {
                     this.score += 500;
@@ -1293,6 +1412,7 @@ class Game {
                 }
 
                 this.updateUI();
+                this.checkAchievements();
             }
         });
 
@@ -1468,6 +1588,16 @@ class Game {
 
     gameOver() {
         this.gameRunning = false;
+
+        // Update high score
+        if (this.score > this.achievements.highScore) {
+            this.achievements.highScore = this.score;
+            this.saveAchievements();
+        }
+
+        // Reset combo
+        this.gameStats.currentCombo = 0;
+
         this.showGameOverScreen();
     }
 }

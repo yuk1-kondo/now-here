@@ -370,6 +370,53 @@ body {
     }
 }
 
+/* Achievement Notification */
+.achievement-notification {
+    position: fixed;
+    top: -100px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: top 0.3s ease;
+    z-index: 10000;
+    min-width: 250px;
+}
+
+.achievement-notification.show {
+    top: 20px;
+}
+
+.achievement-icon {
+    font-size: 2rem;
+    animation: bounce 0.5s ease;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+}
+
+.achievement-text {
+    flex: 1;
+}
+
+.achievement-title {
+    font-weight: bold;
+    font-size: 1.1rem;
+    margin-bottom: 0.2rem;
+}
+
+.achievement-desc {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
 /* Touch device detection */
 @media (hover: none) and (pointer: coarse) {
     #mobile-controls {
