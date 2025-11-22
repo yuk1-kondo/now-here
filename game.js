@@ -290,6 +290,40 @@ class Player extends GameObject {
                 }
                 break;
         }
+
+        // Check for combo effects
+        this.checkCombos();
+    }
+
+    checkCombos() {
+        // Twin Cannon + Speed = Faster bullets
+        if (this.hasTwinCannon && this.speedLevel > 0) {
+            this.hasFastBullets = true;
+        }
+
+        // Twin Cannon + Barrier = Barrier shoots bullets
+        if (this.hasTwinCannon && this.hasBarrier) {
+            this.hasBarrierShots = true;
+        }
+
+        // Speed + Barrier = Extended invulnerability
+        if (this.speedLevel > 0 && this.hasBarrier) {
+            this.hasExtendedInvuln = true;
+        }
+
+        // All three = Rainbow mode (all effects active)
+        if (this.hasTwinCannon && this.speedLevel > 0 && this.hasBarrier) {
+            this.hasRainbowMode = true;
+        }
+    }
+
+    getActiveCombos() {
+        const combos = [];
+        if (this.hasFastBullets) combos.push('高速弾');
+        if (this.hasBarrierShots) combos.push('バリア弾');
+        if (this.hasExtendedInvuln) combos.push('延長無敵');
+        if (this.hasRainbowMode) combos.push('🌈 RAINBOW');
+        return combos;
     }
 }
 
@@ -301,11 +335,21 @@ class Bullet extends GameObject {
         super(x, y, 4, 12);
         this.speed = CONFIG.BULLET_SPEED;
         this.isTwin = isTwin;
+        this.vx = 0;
+        this.vy = -this.speed;
     }
 
     update() {
-        this.y -= this.speed;
-        if (this.y < -this.height) {
+        if (this.vx !== 0 || this.vy !== -this.speed) {
+            // Custom velocity (barrier shots)
+            this.x += this.vx;
+            this.y += this.vy;
+        } else {
+            // Normal upward movement
+            this.y -= this.speed;
+        }
+
+        if (this.y < -this.height || this.x < -10 || this.x > 410) {
             this.active = false;
         }
     }
@@ -805,14 +849,36 @@ class Game {
             this.input.super = false;
         });
 
-        // Start button
+        // Start button - show ship selection
         document.getElementById('start-button').addEventListener('click', () => {
-            this.startGame();
+            this.showShipSelectScreen();
+        });
+
+        // Ship selection
+        const shipCards = document.querySelectorAll('.ship-card');
+        shipCards.forEach(card => {
+            card.addEventListener('click', () => {
+                // Remove previous selection
+                shipCards.forEach(c => c.classList.remove('selected'));
+                // Select this ship
+                card.classList.add('selected');
+                this.selectedShip = card.dataset.ship;
+
+                // Start game after a short delay
+                setTimeout(() => {
+                    this.startGame();
+                }, 300);
+            });
+        });
+
+        // Back button
+        document.getElementById('back-button').addEventListener('click', () => {
+            this.showTitleScreen();
         });
 
         // Restart button
         document.getElementById('restart-button').addEventListener('click', () => {
-            this.startGame();
+            this.showShipSelectScreen();
         });
     }
 
@@ -890,18 +956,28 @@ class Game {
 
     showTitleScreen() {
         document.getElementById('title-screen').style.display = 'block';
+        document.getElementById('ship-select-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('game-over-screen').style.display = 'none';
+    }
+
+    showShipSelectScreen() {
+        document.getElementById('title-screen').style.display = 'none';
+        document.getElementById('ship-select-screen').style.display = 'block';
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('game-over-screen').style.display = 'none';
     }
 
     showGameScreen() {
         document.getElementById('title-screen').style.display = 'none';
+        document.getElementById('ship-select-screen').style.display = 'none';
         document.getElementById('game-screen').style.display = 'block';
         document.getElementById('game-over-screen').style.display = 'none';
     }
 
     showGameOverScreen() {
         document.getElementById('title-screen').style.display = 'none';
+        document.getElementById('ship-select-screen').style.display = 'none';
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('game-over-screen').style.display = 'block';
         document.getElementById('final-score').textContent = this.score;
@@ -1044,11 +1120,37 @@ class Game {
     }
 
     shoot() {
+        const bulletSpeed = this.player.hasFastBullets ? CONFIG.BULLET_SPEED * 1.5 : CONFIG.BULLET_SPEED;
+
         if (this.player.hasTwinCannon) {
-            this.bullets.push(new Bullet(this.player.x + 5, this.player.y));
-            this.bullets.push(new Bullet(this.player.x + this.player.width - 9, this.player.y));
+            const b1 = new Bullet(this.player.x + 5, this.player.y);
+            const b2 = new Bullet(this.player.x + this.player.width - 9, this.player.y);
+            b1.speed = bulletSpeed;
+            b2.speed = bulletSpeed;
+            this.bullets.push(b1, b2);
         } else {
-            this.bullets.push(new Bullet(this.player.x + this.player.width / 2 - 2, this.player.y));
+            const b = new Bullet(this.player.x + this.player.width / 2 - 2, this.player.y);
+            b.speed = bulletSpeed;
+            this.bullets.push(b);
+        }
+
+        // Barrier shots - shoot from barrier edges
+        if (this.player.hasBarrierShots && this.frameCount % 10 === 0) {
+            const barrierSize = 15 + this.player.barrierStrength * 2;
+            const centerX = this.player.x + this.player.width / 2;
+            const centerY = this.player.y + this.player.height / 2;
+
+            // Shoot in 4 directions from barrier
+            for (let i = 0; i < 4; i++) {
+                const angle = (Math.PI / 2) * i;
+                const bx = centerX + Math.cos(angle) * barrierSize - 2;
+                const by = centerY + Math.sin(angle) * barrierSize - 6;
+                const bullet = new Bullet(bx, by);
+                bullet.speed = CONFIG.BULLET_SPEED * 0.8;
+                bullet.vx = Math.cos(angle) * 3;
+                bullet.vy = Math.sin(angle) * 3 - 5; // Always go mostly up
+                this.bullets.push(bullet);
+            }
         }
     }
 
@@ -1247,6 +1349,36 @@ class Game {
         if (this.player.dashCooldownTimer > 0) {
             this.drawDashCooldown();
         }
+
+        // Draw combo effects
+        this.drawCombos();
+    }
+
+    drawCombos() {
+        const combos = this.player.getActiveCombos();
+        if (combos.length === 0) return;
+
+        const startY = 20;
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fillRect(5, startY, 120, combos.length * 20 + 10);
+
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'left';
+
+        combos.forEach((combo, i) => {
+            const gradient = this.ctx.createLinearGradient(10, startY + 15 + i * 20, 100, startY + 15 + i * 20);
+            if (combo.includes('RAINBOW')) {
+                gradient.addColorStop(0, '#FF6B6B');
+                gradient.addColorStop(0.33, '#FFD700');
+                gradient.addColorStop(0.66, '#4ECDC4');
+                gradient.addColorStop(1, '#9B59B6');
+            } else {
+                gradient.addColorStop(0, '#FFD700');
+                gradient.addColorStop(1, '#FF6B6B');
+            }
+            this.ctx.fillStyle = gradient;
+            this.ctx.fillText(combo, 10, startY + 15 + i * 20);
+        });
     }
 
     drawSuperGauge() {

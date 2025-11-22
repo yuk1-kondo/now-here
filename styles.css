@@ -211,6 +211,93 @@ body {
     transform: scale(0.95);
 }
 
+/* Ship Selection Screen */
+#ship-select-screen {
+    text-align: center;
+    padding: 2rem;
+}
+
+#ship-select-screen h1 {
+    font-size: 2rem;
+    color: #f39c12;
+    margin-bottom: 2rem;
+}
+
+#ship-selection {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
+    max-width: 800px;
+    margin: 0 auto 2rem;
+}
+
+.ship-card {
+    background: rgba(255, 255, 255, 0.1);
+    border: 3px solid transparent;
+    border-radius: 15px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.ship-card:hover {
+    border-color: #f39c12;
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(243, 156, 18, 0.3);
+}
+
+.ship-card.selected {
+    border-color: #3498db;
+    background: rgba(52, 152, 219, 0.2);
+    box-shadow: 0 0 20px rgba(52, 152, 219, 0.5);
+}
+
+.ship-preview {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ship-card h3 {
+    color: #fff;
+    margin-bottom: 0.5rem;
+}
+
+.ship-type {
+    color: #3498db;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.ship-stats {
+    text-align: left;
+    font-size: 0.9rem;
+}
+
+.ship-stats .stat {
+    margin-bottom: 0.3rem;
+    color: #ecf0f1;
+}
+
+#back-button {
+    background: linear-gradient(to bottom, #95a5a6, #7f8c8d);
+    color: white;
+    border: none;
+    padding: 0.8rem 2rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s;
+}
+
+#back-button:hover {
+    transform: translateY(-2px);
+}
+
 /* Game Over Screen */
 #game-over-screen {
     text-align: center;
