@@ -35,8 +35,157 @@ const CONFIG = {
     TARGET_FPS: 60,
     FRAME_TIME: 1000 / 60,  // ~16.67ms per frame
     // 1UP system
-    ONEUP_SCORE_INTERVAL: 20000  // Extra life every 20,000 points
+    ONEUP_SCORE_INTERVAL: 20000,  // Extra life every 20,000 points
+    // Spatial hash grid
+    GRID_CELL_SIZE: 50
 };
+
+// ===============================
+// Utility Functions
+// ===============================
+
+// LocalStorage helper with unified error handling
+const StorageHelper = {
+    load(key, defaultValue = null, notifyUser = false) {
+        try {
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                return JSON.parse(saved);
+            }
+            return defaultValue;
+        } catch (error) {
+            console.warn(`Failed to load "${key}" from LocalStorage:`, error);
+            if (notifyUser && error.name === 'QuotaExceededError') {
+                alert('ストレージ容量が不足しています。ブラウザのキャッシュをクリアしてください。');
+            }
+            return defaultValue;
+        }
+    },
+
+    save(key, value, notifyUser = false) {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+            return true;
+        } catch (error) {
+            console.warn(`Failed to save "${key}" to LocalStorage:`, error);
+            if (notifyUser && error.name === 'QuotaExceededError') {
+                alert('ストレージ容量が不足しています。一部のデータが保存されませんでした。');
+            }
+            return false;
+        }
+    }
+};
+
+// Input validation helpers
+const Validator = {
+    isValidShipType(ship) {
+        return ['twinbee', 'winbee', 'gwinbee', 'starbee'].includes(ship);
+    },
+
+    isValidDifficulty(difficulty) {
+        return ['easy', 'normal', 'hard'].includes(difficulty);
+    },
+
+    isValidEnemyType(type) {
+        return ['basic', 'strong', 'fast'].includes(type);
+    },
+
+    isValidBellColor(colorIndex) {
+        return Number.isInteger(colorIndex) && colorIndex >= 0 && colorIndex < CONFIG.BELL_COLORS.length;
+    },
+
+    clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+};
+
+// Spatial Hash Grid for efficient collision detection
+class SpatialHashGrid {
+    constructor(cellSize = CONFIG.GRID_CELL_SIZE) {
+        this.cellSize = cellSize;
+        this.grid = new Map();
+    }
+
+    clear() {
+        this.grid.clear();
+    }
+
+    getCellKey(x, y) {
+        const cellX = Math.floor(x / this.cellSize);
+        const cellY = Math.floor(y / this.cellSize);
+        return `${cellX},${cellY}`;
+    }
+
+    insert(obj) {
+        if (!obj || !obj.active) return;
+
+        // Calculate the cells this object occupies
+        const minX = Math.floor(obj.x / this.cellSize);
+        const minY = Math.floor(obj.y / this.cellSize);
+        const maxX = Math.floor((obj.x + (obj.width || 0)) / this.cellSize);
+        const maxY = Math.floor((obj.y + (obj.height || 0)) / this.cellSize);
+
+        // Insert object into all cells it occupies
+        for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                const key = `${x},${y}`;
+                if (!this.grid.has(key)) {
+                    this.grid.set(key, []);
+                }
+                this.grid.get(key).push(obj);
+            }
+        }
+    }
+
+    getNearbyObjects(obj) {
+        if (!obj) return [];
+
+        const nearby = new Set();
+        const minX = Math.floor(obj.x / this.cellSize);
+        const minY = Math.floor(obj.y / this.cellSize);
+        const maxX = Math.floor((obj.x + (obj.width || 0)) / this.cellSize);
+        const maxY = Math.floor((obj.y + (obj.height || 0)) / this.cellSize);
+
+        // Get objects from nearby cells
+        for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                const key = `${x},${y}`;
+                const objects = this.grid.get(key);
+                if (objects) {
+                    objects.forEach(o => nearby.add(o));
+                }
+            }
+        }
+
+        return Array.from(nearby);
+    }
+}
+
+// Gradient cache to reduce object creation
+class GradientCache {
+    constructor(ctx) {
+        this.ctx = ctx;
+        this.cache = new Map();
+    }
+
+    getLinearGradient(key, x0, y0, x1, y1, colorStops) {
+        if (this.cache.has(key)) {
+            return this.cache.get(key);
+        }
+
+        const gradient = this.ctx.createLinearGradient(x0, y0, x1, y1);
+        colorStops.forEach(([offset, color]) => {
+            gradient.addColorStop(offset, color);
+        });
+
+        this.cache.set(key, gradient);
+        return gradient;
+    }
+
+    clear() {
+        this.cache.clear();
+    }
+}
 
 // ===============================
 // Sound Manager (Web Audio API)
@@ -724,6 +873,13 @@ class Bomb extends GameObject {
 class Enemy extends GameObject {
     constructor(x, y, type = 'basic') {
         super(x, y, 25, 25);
+
+        // Validate enemy type
+        if (!Validator.isValidEnemyType(type)) {
+            console.warn(`Invalid enemy type "${type}", defaulting to "basic"`);
+            type = 'basic';
+        }
+
         this.type = type;
         this.speed = 2;
         this.health = 1;
@@ -1061,6 +1217,8 @@ class Particle extends GameObject {
         this.vx = (Math.random() - 0.5) * CONFIG.PARTICLE_MAX_VELOCITY;
         this.vy = (Math.random() - 0.5) * CONFIG.PARTICLE_MAX_VELOCITY;
         this.color = color;
+        // Pre-compute transparent color for performance
+        this.transparentColor = this.convertToTransparent(color);
         this.life = CONFIG.PARTICLE_LIFETIME;
         this.maxLife = CONFIG.PARTICLE_LIFETIME;
 
@@ -1070,6 +1228,19 @@ class Particle extends GameObject {
         this.size = Math.random() * 4 + 2; // Random size 2-6
         this.shape = Math.random() < 0.5 ? 'circle' : 'square'; // Random shape
         this.gravity = 0.1;
+    }
+
+    convertToTransparent(color) {
+        // Convert rgb(r,g,b) or hex to rgba(r,g,b,0) format
+        if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            return `rgba(${r},${g},${b},0)`;
+        } else if (color.startsWith('rgb')) {
+            return color.replace(')', ', 0)').replace('rgb', 'rgba');
+        }
+        return 'rgba(255,255,255,0)';
     }
 
     update() {
@@ -1092,10 +1263,10 @@ class Particle extends GameObject {
         ctx.rotate(this.rotation);
 
         if (this.shape === 'circle') {
-            // Draw glowing circle
+            // Draw glowing circle with pre-computed gradient
             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
             gradient.addColorStop(0, this.color);
-            gradient.addColorStop(1, this.color.replace(')', ', 0)').replace('rgb', 'rgba'));
+            gradient.addColorStop(1, this.transparentColor);
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(0, 0, this.size, 0, Math.PI * 2);
@@ -1170,13 +1341,19 @@ class Game {
         if (!this.ctx) {
             console.error('Failed to get 2D context from canvas');
             alert('このブラウザではゲームを実行できません。Canvas 2Dをサポートするブラウザをご利用ください。');
-            return;
+            throw new Error('Canvas 2D context initialization failed');
         }
 
         this.setupCanvas();
 
         // Initialize Sound Manager
         this.soundManager = new SoundManager();
+
+        // Initialize Spatial Hash Grid for collision detection
+        this.spatialGrid = new SpatialHashGrid();
+
+        // Initialize Gradient Cache
+        this.gradientCache = new GradientCache(this.ctx);
 
         this.player = null;
         this.bullets = [];
@@ -1224,6 +1401,9 @@ class Game {
         this.selectedShip = 'twinbee';
         this.selectedDifficulty = 'normal'; // easy, normal, hard
         this.superAttackEffects = [];
+
+        // Event listener storage for cleanup
+        this.eventListeners = [];
 
         // Achievement system
         this.achievements = this.loadAchievements();
@@ -1273,15 +1453,7 @@ class Game {
     }
 
     loadAchievements() {
-        try {
-            const saved = localStorage.getItem('twinbee_achievements');
-            if (saved) {
-                return JSON.parse(saved);
-            }
-        } catch (error) {
-            console.warn('Failed to load achievements from LocalStorage:', error);
-        }
-        return {
+        const defaultAchievements = {
             highScore: 0,
             firstKill: false,
             combo10: false,
@@ -1291,74 +1463,43 @@ class Game {
             dashMaster: false,
             rainbowWarrior: false
         };
+        return StorageHelper.load('twinbee_achievements', defaultAchievements);
     }
 
     saveAchievements() {
-        try {
-            localStorage.setItem('twinbee_achievements', JSON.stringify(this.achievements));
-        } catch (error) {
-            console.warn('Failed to save achievements to LocalStorage:', error);
-        }
+        StorageHelper.save('twinbee_achievements', this.achievements, true);
     }
 
     loadShopItems() {
-        try {
-            const saved = localStorage.getItem('twinbee_shop');
-            if (saved) {
-                const savedItems = JSON.parse(saved);
-                Object.keys(savedItems).forEach(key => {
-                    if (this.shopItems[key]) {
-                        this.shopItems[key].purchased = savedItems[key].purchased;
-                    }
-                });
-            }
-        } catch (error) {
-            console.warn('Failed to load shop items from LocalStorage:', error);
+        const saved = StorageHelper.load('twinbee_shop', null);
+        if (saved) {
+            Object.keys(saved).forEach(key => {
+                if (this.shopItems[key]) {
+                    this.shopItems[key].purchased = saved[key].purchased;
+                }
+            });
         }
     }
 
     saveShopItems() {
-        try {
-            localStorage.setItem('twinbee_shop', JSON.stringify(this.shopItems));
-        } catch (error) {
-            console.warn('Failed to save shop items to LocalStorage:', error);
-        }
+        StorageHelper.save('twinbee_shop', this.shopItems, true);
     }
 
     loadTotalScore() {
-        try {
-            const saved = localStorage.getItem('twinbee_totalScore');
-            return saved ? parseInt(saved, 10) : 0;
-        } catch (error) {
-            console.warn('Failed to load total score from LocalStorage:', error);
-            return 0;
-        }
+        const saved = StorageHelper.load('twinbee_totalScore', 0);
+        return typeof saved === 'number' ? saved : 0;
     }
 
     saveTotalScore() {
-        try {
-            localStorage.setItem('twinbee_totalScore', this.totalScore.toString());
-        } catch (error) {
-            console.warn('Failed to save total score to LocalStorage:', error);
-        }
+        StorageHelper.save('twinbee_totalScore', this.totalScore, true);
     }
 
     loadClearedStages() {
-        try {
-            const saved = localStorage.getItem('twinbee_clearedStages');
-            return saved ? JSON.parse(saved) : [1]; // Stage 1 always available
-        } catch (error) {
-            console.warn('Failed to load cleared stages from LocalStorage:', error);
-            return [1];
-        }
+        return StorageHelper.load('twinbee_clearedStages', [1]); // Stage 1 always available
     }
 
     saveClearedStages() {
-        try {
-            localStorage.setItem('twinbee_clearedStages', JSON.stringify(this.clearedStages));
-        } catch (error) {
-            console.warn('Failed to save cleared stages to LocalStorage:', error);
-        }
+        StorageHelper.save('twinbee_clearedStages', this.clearedStages, true);
     }
 
     checkAchievements() {
@@ -1841,13 +1982,21 @@ class Game {
 
     resetGame() {
         // Validate ship type
-        const validShips = ['twinbee', 'winbee', 'gwinbee', 'starbee'];
-        const shipType = validShips.includes(this.selectedShip) ? this.selectedShip : 'twinbee';
+        if (!Validator.isValidShipType(this.selectedShip)) {
+            console.warn(`Invalid ship type "${this.selectedShip}", defaulting to "twinbee"`);
+            this.selectedShip = 'twinbee';
+        }
+
+        // Validate difficulty
+        if (!Validator.isValidDifficulty(this.selectedDifficulty)) {
+            console.warn(`Invalid difficulty "${this.selectedDifficulty}", defaulting to "normal"`);
+            this.selectedDifficulty = 'normal';
+        }
 
         // Center player horizontally, near bottom
         const playerX = (CONFIG.CANVAS_WIDTH - 30) / 2;
         const playerY = CONFIG.CANVAS_HEIGHT - 100;
-        this.player = new Player(playerX, playerY, shipType);
+        this.player = new Player(playerX, playerY, this.selectedShip);
 
         // Apply difficulty settings
         const difficulty = this.getDifficultyMultipliers();
@@ -2184,6 +2333,8 @@ class Game {
         const difficulty = this.getDifficultyMultipliers();
         enemy.speed *= difficulty.enemySpeed;
         enemy.health = Math.ceil(enemy.health * difficulty.enemyHealth);
+        // Apply difficulty to shoot cooldown (inverse - higher difficulty = faster shooting)
+        enemy.shootCooldown = Math.floor(enemy.shootCooldown / difficulty.bulletSpeed);
 
         this.enemies.push(enemy);
     }
@@ -2280,14 +2431,32 @@ class Game {
     }
 
     checkCollisions() {
-        // Bullets vs Enemies
+        // Clear and rebuild spatial grid
+        this.spatialGrid.clear();
+
+        // Insert all collidable objects into grid
+        this.enemies.forEach(e => e.active && this.spatialGrid.insert(e));
+        this.clouds.forEach(c => c.active && this.spatialGrid.insert(c));
+        this.bells.forEach(b => b.active && this.spatialGrid.insert(b));
+        this.groundEnemies.forEach(g => g.active && this.spatialGrid.insert(g));
+        this.items.forEach(i => i.active && this.spatialGrid.insert(i));
+        this.enemyBullets.forEach(b => b.active && this.spatialGrid.insert(b));
+
+        // Bullets vs Nearby Objects (Enemies, Clouds, Bells)
         this.bullets.forEach(bullet => {
-            this.enemies.forEach(enemy => {
-                if (bullet.active && enemy.active && checkCollision(bullet, enemy)) {
+            if (!bullet.active) return;
+
+            const nearbyObjects = this.spatialGrid.getNearbyObjects(bullet);
+
+            for (const obj of nearbyObjects) {
+                if (!bullet.active) break;
+
+                // Check collision with enemies
+                if (obj instanceof Enemy && checkCollision(bullet, obj)) {
                     bullet.active = false;
-                    if (enemy.takeDamage(bullet.damage)) {
-                        enemy.active = false;
-                        this.addScore(enemy.points);
+                    if (obj.takeDamage(bullet.damage)) {
+                        obj.active = false;
+                        this.addScore(obj.points);
                         const gaugeGain = this.shopItems.superGaugeBoost.purchased
                             ? CONFIG.SUPER_GAUGE_GAIN_PER_KILL * 1.5
                             : CONFIG.SUPER_GAUGE_GAIN_PER_KILL;
@@ -2298,42 +2467,42 @@ class Game {
                         if (this.gameStats.currentCombo > this.gameStats.maxCombo) {
                             this.gameStats.maxCombo = this.gameStats.currentCombo;
                         }
-                        this.createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#E74C3C');
+                        this.createExplosion(obj.x + obj.width / 2, obj.y + obj.height / 2, '#E74C3C');
                         this.updateUI();
                         this.check1UP();
                         this.checkAchievements();
                     }
                 }
-            });
-
-            // Bullets vs Clouds
-            this.clouds.forEach(cloud => {
-                if (bullet.active && cloud.active && !cloud.hit && checkCollision(bullet, cloud)) {
+                // Check collision with clouds
+                else if (obj instanceof Cloud && !obj.hit && checkCollision(bullet, obj)) {
                     bullet.active = false;
-                    cloud.hit = true;
-                    if (cloud.hasBell) {
-                        this.bells.push(new Bell(cloud.x + 10, cloud.y + 10));
+                    obj.hit = true;
+                    if (obj.hasBell) {
+                        this.bells.push(new Bell(obj.x + 10, obj.y + 10));
                     }
                 }
-            });
-
-            // Bullets vs Bells
-            this.bells.forEach(bell => {
-                if (bullet.active && bell.active && checkCollision(bullet, bell)) {
+                // Check collision with bells
+                else if (obj instanceof Bell && checkCollision(bullet, obj)) {
                     bullet.active = false;
-                    bell.hit();
+                    obj.hit();
                 }
-            });
+            }
         });
 
         // Bombs vs Ground Enemies
         this.bombs.forEach(bomb => {
-            this.groundEnemies.forEach(groundEnemy => {
-                if (bomb.active && groundEnemy.active && checkCollision(bomb, groundEnemy)) {
+            if (!bomb.active) return;
+
+            const nearbyObjects = this.spatialGrid.getNearbyObjects(bomb);
+
+            for (const obj of nearbyObjects) {
+                if (!bomb.active) break;
+
+                if (obj instanceof GroundEnemy && checkCollision(bomb, obj)) {
                     bomb.active = false;
-                    if (groundEnemy.takeDamage()) {
-                        groundEnemy.active = false;
-                        this.addScore(groundEnemy.points);
+                    if (obj.takeDamage()) {
+                        obj.active = false;
+                        this.addScore(obj.points);
                         const gaugeGain = this.shopItems.superGaugeBoost.purchased
                             ? CONFIG.SUPER_GAUGE_GAIN_PER_KILL * 1.5
                             : CONFIG.SUPER_GAUGE_GAIN_PER_KILL;
@@ -2342,85 +2511,89 @@ class Game {
                         // Drop items
                         if (Math.random() < 0.3) {
                             const itemType = Math.random() < 0.8 ? 'fruit' : 'star';
-                            this.items.push(new Item(groundEnemy.x, groundEnemy.y, itemType));
+                            this.items.push(new Item(obj.x, obj.y, itemType));
                         }
 
-                        this.createExplosion(groundEnemy.x + groundEnemy.width / 2, groundEnemy.y + groundEnemy.height / 2, '#8B4513');
+                        this.createExplosion(obj.x + obj.width / 2, obj.y + obj.height / 2, '#8B4513');
                         this.updateUI();
                         this.check1UP();
                     }
                 }
-            });
-        });
-
-        // Enemy Bullets vs Player
-        this.enemyBullets.forEach(bullet => {
-            if (bullet.active && checkCollision(this.player, bullet)) {
-                bullet.active = false;
-                if (this.player.takeDamage()) {
-                    this.soundManager.playDamage();
-                    this.vibrate(100); // Medium vibration for damage
-                    this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
-                }
-                this.updateUI();
             }
         });
 
-        // Player vs Enemies
-        this.enemies.forEach(enemy => {
-            if (enemy.active && checkCollision(this.player, enemy)) {
-                enemy.active = false;
-                if (this.player.takeDamage()) {
-                    this.soundManager.playDamage();
-                    this.vibrate(100); // Medium vibration for damage
-                    this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
+        // Player vs Nearby Objects
+        if (this.player && this.player.active) {
+            const nearbyObjects = this.spatialGrid.getNearbyObjects(this.player);
+
+            for (const obj of nearbyObjects) {
+                // Enemy bullets vs Player
+                if (obj instanceof EnemyBullet && checkCollision(this.player, obj)) {
+                    obj.active = false;
+                    if (this.player.takeDamage()) {
+                        this.soundManager.playDamage();
+                        this.vibrate(100);
+                        this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
+                    }
+                    this.updateUI();
                 }
-                this.updateUI();
-            }
-        });
-
-        // Player vs Bells
-        this.bells.forEach(bell => {
-            if (bell.active && checkCollision(this.player, bell)) {
-                bell.active = false;
-                const colorName = bell.getColorName();
-                this.gameStats.bellsCollected++;
-
-                // Play bell sound based on color
-                this.soundManager.playBell(bell.colorIndex);
-
-                if (colorName === 'yellow') {
-                    this.addScore(500);
-                } else {
-                    this.player.powerUp(colorName);
-                    // Play power-up sound for non-yellow bells
-                    this.soundManager.playPowerUp();
+                // Enemies vs Player
+                else if (obj instanceof Enemy && !(obj instanceof Boss) && checkCollision(this.player, obj)) {
+                    obj.active = false;
+                    if (this.player.takeDamage()) {
+                        this.soundManager.playDamage();
+                        this.vibrate(100);
+                        this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
+                    }
+                    this.updateUI();
                 }
-
-                this.updateUI();
-                this.check1UP();
-                this.checkAchievements();
-            }
-        });
-
-        // Player vs Items
-        this.items.forEach(item => {
-            if (item.active && checkCollision(this.player, item)) {
-                item.active = false;
-                this.addScore(item.points);
-
-                if (item.type === 'star') {
-                    // Clear all enemies on screen
-                    this.enemies.forEach(e => {
-                        e.active = false;
-                        this.addScore(e.points);
-                    });
+                // Boss vs Player (different handling)
+                else if (obj instanceof Boss && checkCollision(this.player, obj)) {
+                    // Boss doesn't get destroyed on collision
+                    if (this.player.takeDamage()) {
+                        this.soundManager.playDamage();
+                        this.vibrate(100);
+                        this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, '#FF6B6B');
+                    }
+                    this.updateUI();
                 }
+                // Bells vs Player
+                else if (obj instanceof Bell && checkCollision(this.player, obj)) {
+                    obj.active = false;
+                    const colorName = obj.getColorName();
+                    this.gameStats.bellsCollected++;
 
-                this.updateUI();
-                this.check1UP();
+                    this.soundManager.playBell(obj.colorIndex);
+
+                    if (colorName === 'yellow') {
+                        this.addScore(500);
+                    } else {
+                        this.player.powerUp(colorName);
+                        this.soundManager.playPowerUp();
+                    }
+
+                    this.updateUI();
+                    this.check1UP();
+                    this.checkAchievements();
+                }
+                // Items vs Player
+                else if (obj instanceof Item && checkCollision(this.player, obj)) {
+                    obj.active = false;
+                    this.addScore(obj.points);
+
+                    if (obj.type === 'star') {
+                        // Clear all enemies on screen
+                        this.enemies.forEach(e => {
+                            e.active = false;
+                            this.addScore(e.points);
+                        });
+                    }
+
+                    this.updateUI();
+                    this.check1UP();
+                }
             }
-        });
+        }
     }
 
     createExplosion(x, y, color) {
@@ -2447,9 +2620,19 @@ class Game {
 
     vibrate(pattern) {
         // Vibration API for mobile devices
+        // Normalize pattern to array format
         if ('vibrate' in navigator) {
-            navigator.vibrate(pattern);
+            const normalizedPattern = Array.isArray(pattern) ? pattern : [pattern];
+            navigator.vibrate(normalizedPattern);
         }
+    }
+
+    // Cleanup method for removing event listeners (memory leak prevention)
+    cleanup() {
+        // This method can be called if the game instance needs to be destroyed
+        // For now, we store event listeners for potential future cleanup
+        this.gameRunning = false;
+        this.soundManager.stopBGM();
     }
 
     addScore(points) {
